@@ -1,46 +1,57 @@
-// Local durable outbox. Everything the bridge wants to send to the cloud is
-// enqueued here first, so an internet outage never loses data — the uploader
-// drains the queue when connectivity returns.
+// Local durable outbox — pure-JS (no native deps) so the whole box can ship as a
+// single bundled file and OTA-update trivially. Everything bound for the cloud is
+// enqueued here first, so an internet outage never loses data; the uploader drains
+// it when connectivity returns. Backed by a small JSON file (rewritten on change);
+// the volume (reps batches per day) is tiny, so this is plenty.
 import fs from 'node:fs';
 import path from 'node:path';
-import Database from 'better-sqlite3';
 import { config } from '../config.js';
 
 export type OutboxKind = 'reps' | 'live';
-
 export interface OutboxItem { id: number; kind: OutboxKind; payload: string; created_at: number; }
 
-let db: Database.Database | null = null;
+const file = path.join(config.dataDir, 'outbox.json');
 
-function open(): Database.Database {
-  if (db) return db;
+interface OutboxFile { seq: number; items: OutboxItem[]; }
+let cache: OutboxFile | null = null;
+
+function load(): OutboxFile {
+  if (cache) return cache;
   fs.mkdirSync(config.dataDir, { recursive: true });
-  db = new Database(path.join(config.dataDir, 'buffer.db'));
-  db.pragma('journal_mode = WAL');
-  db.exec(`CREATE TABLE IF NOT EXISTS outbox (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind TEXT NOT NULL,
-    payload TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-  );`);
-  return db;
+  try {
+    cache = JSON.parse(fs.readFileSync(file, 'utf8')) as OutboxFile;
+    if (!cache.items) cache = { seq: 0, items: [] };
+  } catch {
+    cache = { seq: 0, items: [] };
+  }
+  return cache;
+}
+
+function persist(): void {
+  fs.mkdirSync(config.dataDir, { recursive: true });
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(cache), { mode: 0o600 });
+  fs.renameSync(tmp, file); // atomic swap
 }
 
 export function enqueue(kind: OutboxKind, payload: unknown): void {
-  open().prepare('INSERT INTO outbox (kind, payload, created_at) VALUES (?, ?, ?)')
-    .run(kind, JSON.stringify(payload), Date.now());
+  const db = load();
+  db.items.push({ id: ++db.seq, kind, payload: JSON.stringify(payload), created_at: Date.now() });
+  persist();
 }
 
 export function peek(limit = 50): OutboxItem[] {
-  return open().prepare('SELECT * FROM outbox ORDER BY id ASC LIMIT ?').all(limit) as OutboxItem[];
+  return load().items.slice(0, limit);
 }
 
 export function ack(ids: number[]): void {
   if (ids.length === 0) return;
-  const ph = ids.map(() => '?').join(',');
-  open().prepare(`DELETE FROM outbox WHERE id IN (${ph})`).run(...ids);
+  const db = load();
+  const drop = new Set(ids);
+  db.items = db.items.filter((i) => !drop.has(i.id));
+  persist();
 }
 
 export function pending(): number {
-  return (open().prepare('SELECT COUNT(*) AS n FROM outbox').get() as { n: number }).n;
+  return load().items.length;
 }

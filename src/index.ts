@@ -9,6 +9,7 @@ import { startProvisioningServer } from './provisioning/server.js';
 import { CloudLink } from './cloud/link.js';
 import { KeiserApolloClient } from './hub/apolloClient.js';
 import { enqueue } from './buffer/db.js';
+import { startAutoUpdate } from './update/updater.js';
 import { logger } from './util/log.js';
 
 const log = logger('main');
@@ -22,6 +23,7 @@ async function main() {
 
   advertise();
   await startProvisioningServer(() => advertise()); // re-advertise with new state
+  startAutoUpdate(); // OTA: pull + apply newer bundles from GitHub Releases
 
   // Heartbeat + claim-discovery loop.
   setInterval(() => heartbeatTick().catch((e) => log.warn('heartbeat', e.message)), 30_000);

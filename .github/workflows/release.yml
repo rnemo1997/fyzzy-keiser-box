@@ -1,0 +1,35 @@
+name: release
+
+# Tag a version (e.g. `git tag v0.2.0 && git push --tags`) to cut a release.
+# Builds the single OTA bundle, hashes it, and publishes a GitHub Release with
+# bundle.cjs + bundle.cjs.sha256 — exactly what the box's updater pulls.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Build bundle
+        run: |
+          FYZZY_BRIDGE_VERSION="${GITHUB_REF_NAME#v}" npm run bundle
+          cd dist
+          sha256sum bundle.cjs | awk '{print $1}' > bundle.cjs.sha256
+          echo "sha256: $(cat bundle.cjs.sha256)"
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/bundle.cjs
+            dist/bundle.cjs.sha256
+          generate_release_notes: true

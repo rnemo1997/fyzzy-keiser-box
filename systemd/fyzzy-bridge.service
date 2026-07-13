@@ -8,7 +8,8 @@ Type=simple
 User=fyzzy
 WorkingDirectory=/opt/fyzzy-bridge
 EnvironmentFile=-/etc/fyzzy-bridge.env
-ExecStart=/usr/bin/node /opt/fyzzy-bridge/dist/index.js
+# Runs the single bundled file behind the `current` symlink, which OTA swaps.
+ExecStart=/usr/bin/node /opt/fyzzy-bridge/current/bundle.cjs
 Restart=always
 RestartSec=5
 # Provisioning needs to run nmcli; keep it simple for the appliance.

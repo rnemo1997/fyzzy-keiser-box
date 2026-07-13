@@ -35,6 +35,17 @@ export const config = {
     // Run the daily reconciliation at this local hour.
     dailyHour: Number(process.env.DAILY_EXPORT_HOUR || 3),
   },
+
+  // Over-the-air updates. The box pulls a single bundled file from GitHub
+  // Releases, verifies its sha256, swaps a `current` symlink and restarts.
+  ota: {
+    enabled: process.env.OTA_ENABLED !== 'false',
+    repo: process.env.OTA_REPO || 'rnemo1997/fyzzy-keiser-box',
+    checkIntervalMs: Number(process.env.OTA_INTERVAL_MS || 3_600_000), // hourly
+    installDir: process.env.INSTALL_DIR || '/opt/fyzzy-bridge',
+  },
+
+  version: process.env.FYZZY_BRIDGE_VERSION || '0.1.0',
 } as const;
 
 export type Config = typeof config;

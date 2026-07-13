@@ -6,7 +6,7 @@ import { loadState } from '../state.js';
 import { logger } from '../util/log.js';
 
 const log = logger('mdns');
-let bonjour: Bonjour | null = null;
+let bonjour: InstanceType<typeof Bonjour> | null = null;
 
 export function advertise(): void {
   const st = loadState();

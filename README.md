@@ -31,9 +31,23 @@ npm run dev        # tsx watch
 | `HUB_IP` / `HUB_PORT` | `192.168.150.2` / `8090` | Keiser Hub |
 | `HUB_EMAIL` / `HUB_PASSWORD` | — | **fallback** Keiser-login. Normaal wordt de per-praktijk Keiser-login in de app-onboarding ingevoerd en op de box opgeslagen — niet via env. |
 | `UPLINK_IFACE` | `wlan1` | interface naar het praktijk-net |
-| `FYZZY_CLOUD_URL` | `https://api.fyzzy.nl` | cloud base-url |
+| `FYZZY_CLOUD_URL` | `https://fyzzy.nl` | cloud base-url (`/api/bridge/*`) |
 | `FYZZY_DATA_DIR` | `~/.fyzzy-bridge` | state + buffer |
 | `BACKFILL_DAYS` | `30` | eerste sync haalt zoveel dagen op |
+| `OTA_REPO` | `rnemo1997/fyzzy-keiser-box` | GitHub-repo voor OTA-releases |
+| `OTA_ENABLED` | `true` | zet op `false` om auto-update uit te zetten |
+
+## OTA-updates (over-the-air)
+De box is **pure-JS** en draait als één gebundeld bestand (`bundle.cjs`) achter een
+`current`-symlink. Updaten = die symlink omwisselen — geen compileren op de Pi.
+
+- **Releasen:** `git tag v0.2.0 && git push --tags`. De GitHub Action
+  (`.github/workflows/release.yml`) bouwt `bundle.cjs` + `bundle.cjs.sha256` en
+  publiceert een **GitHub Release**.
+- **De box** checkt elk uur de laatste release, downloadt de bundle, **verifieert de
+  sha256**, plaatst 'm in `releases/<versie>/`, wisselt de `current`-symlink en herstart
+  (systemd `Restart=always`). Vorige releases blijven staan → snelle rollback.
+- Uit te zetten met `OTA_ENABLED=false`.
 
 ## Deploy op de Pi
 ```bash
