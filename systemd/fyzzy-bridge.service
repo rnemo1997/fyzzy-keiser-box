@@ -1,0 +1,18 @@
+[Unit]
+Description=Fyzzy Bridge (Keiser Hub collector)
+After=network-online.target NetworkManager.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fyzzy
+WorkingDirectory=/opt/fyzzy-bridge
+EnvironmentFile=-/etc/fyzzy-bridge.env
+ExecStart=/usr/bin/node /opt/fyzzy-bridge/dist/index.js
+Restart=always
+RestartSec=5
+# Provisioning needs to run nmcli; keep it simple for the appliance.
+AmbientCapabilities=CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target

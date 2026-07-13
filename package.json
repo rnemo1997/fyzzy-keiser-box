@@ -1,0 +1,30 @@
+{
+  "name": "fyzzy-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fyzzy Bridge — on-site collector that reads a Keiser A400 Hub over LAN and streams training data (live + daily export) to Fyzzy cloud. Runs on a Raspberry Pi.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "bin": { "fyzzy-bridge": "dist/index.js" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "better-sqlite3": "^11.3.0",
+    "bonjour-service": "^1.2.1",
+    "fastify": "^4.28.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.5",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.0",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
