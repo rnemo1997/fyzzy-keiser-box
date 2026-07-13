@@ -29,7 +29,7 @@ npm run dev        # tsx watch
 | var | default | |
 |---|---|---|
 | `HUB_IP` / `HUB_PORT` | `192.168.150.2` / `8090` | Keiser Hub |
-| `HUB_EMAIL` / `HUB_PASSWORD` | — | Keiser-login (tijdelijk; later machine-secret) |
+| `HUB_EMAIL` / `HUB_PASSWORD` | — | **fallback** Keiser-login. Normaal wordt de per-praktijk Keiser-login in de app-onboarding ingevoerd en op de box opgeslagen — niet via env. |
 | `UPLINK_IFACE` | `wlan1` | interface naar het praktijk-net |
 | `FYZZY_CLOUD_URL` | `https://api.fyzzy.nl` | cloud base-url |
 | `FYZZY_DATA_DIR` | `~/.fyzzy-bridge` | state + buffer |

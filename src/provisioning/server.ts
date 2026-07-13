@@ -6,6 +6,7 @@ import Fastify from 'fastify';
 import { config } from '../config.js';
 import { loadState, saveState } from '../state.js';
 import { applyPracticeWifi } from './wifi.js';
+import { KeiserApolloClient } from '../hub/apolloClient.js';
 import { logger } from '../util/log.js';
 
 const log = logger('provision');
@@ -25,16 +26,32 @@ export async function startProvisioningServer(onProvisioned: () => void): Promis
     if (st.lifecycle === 'linked' || st.lifecycle === 'running') {
       return reply.code(409).send({ error: 'already_linked', message: 'Box is al gekoppeld. Factory-reset om opnieuw in te stellen.' });
     }
-    const { ssid, password } = (req.body ?? {}) as { ssid?: string; password?: string };
+    const { ssid, password, hubEmail, hubPassword } = (req.body ?? {}) as {
+      ssid?: string; password?: string; hubEmail?: string; hubPassword?: string;
+    };
     if (!ssid || !password) return reply.code(422).send({ error: 'missing', message: 'ssid en password vereist' });
 
     const res = await applyPracticeWifi(ssid, password);
     if (!res.ok) return reply.code(400).send({ error: 'wifi_failed', message: res.error ?? 'Kon geen verbinding maken' });
 
+    // Keiser Hub login is per-practice — entered here during onboarding, stored
+    // only on the box (never sent to the Fyzzy cloud). Test it right away.
+    let hubOk: boolean | undefined;
+    if (hubEmail && hubPassword) {
+      try {
+        await new KeiserApolloClient(config.hub).login(hubEmail, hubPassword);
+        saveState({ hub: { email: hubEmail, password: hubPassword } });
+        hubOk = true;
+      } catch (e) {
+        log.warn('hub login test failed during provision', (e as Error).message);
+        hubOk = false;
+      }
+    }
+
     saveState({ lifecycle: 'provisioned', practiceWifi: { ssid } });
-    log.info(`provisioned SSID="${ssid}" internet=${res.hasInternet}`);
+    log.info(`provisioned SSID="${ssid}" internet=${res.hasInternet} hubOk=${hubOk}`);
     onProvisioned();
-    return { ok: true, hasInternet: res.hasInternet, deviceUid: st.deviceUid };
+    return { ok: true, hasInternet: res.hasInternet, hubOk, deviceUid: st.deviceUid };
   });
 
   await app.listen({ host: '0.0.0.0', port: config.provisioning.port });
