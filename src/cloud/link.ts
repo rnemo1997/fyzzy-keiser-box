@@ -13,7 +13,6 @@ const log = logger('cloud');
 export interface HeartbeatReply {
   claimed: boolean;
   practiceId?: number;
-  deviceToken?: string;
 }
 
 export class CloudLink {
@@ -26,9 +25,10 @@ export class CloudLink {
     const st = loadState();
     const res = await fetch(this.url('/api/bridge/heartbeat'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(st.cloud ? { Authorization: `Bearer ${st.cloud.deviceToken}` } : {}) },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         deviceUid: st.deviceUid,
+        deviceSecret: st.deviceSecret,
         state: st.lifecycle,
         fw: process.env.npm_package_version || '0.1.0',
         hubReachable,
@@ -38,9 +38,9 @@ export class CloudLink {
     if (!res.ok) throw new Error(`heartbeat HTTP ${res.status}`);
     const reply = (await res.json()) as HeartbeatReply;
 
-    // First time we learn we've been claimed → persist the device token + practice.
-    if (reply.claimed && reply.deviceToken && !st.cloud) {
-      saveState({ lifecycle: 'running', cloud: { deviceToken: reply.deviceToken, practiceId: reply.practiceId! } });
+    // First time we learn we've been claimed → go running + remember the practice.
+    if (reply.claimed && !st.cloud) {
+      saveState({ lifecycle: 'running', cloud: { practiceId: reply.practiceId! } });
       log.info(`claimed by practice ${reply.practiceId}`);
     }
     return reply;
@@ -56,7 +56,11 @@ export class CloudLink {
       if (batch.length === 0) break;
       const res = await fetch(this.url('/api/bridge/ingest'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${st.cloud.deviceToken}` },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Device-Uid': st.deviceUid,
+          'X-Device-Secret': st.deviceSecret,
+        },
         body: JSON.stringify({ items: batch.map((b) => ({ kind: b.kind, payload: JSON.parse(b.payload) })) }),
       });
       if (!res.ok) { log.warn(`ingest HTTP ${res.status} — will retry`); break; }
@@ -72,7 +76,7 @@ export class CloudLink {
     const st = loadState();
     if (!st.cloud) return;
     const wsUrl = config.cloud.wsUrl || config.cloud.baseUrl.replace(/^http/, 'ws') + '/bridge/live';
-    this.ws = new WebSocket(wsUrl, { headers: { Authorization: `Bearer ${st.cloud.deviceToken}` } });
+    this.ws = new WebSocket(wsUrl, { headers: { 'X-Device-Uid': st.deviceUid, 'X-Device-Secret': st.deviceSecret } });
     this.ws.on('open', () => { log.info('live ws open'); onOpen?.((e) => this.ws?.send(JSON.stringify(e))); });
     this.ws.on('close', () => { log.warn('live ws closed — reconnect in 5s'); setTimeout(() => this.connectLive(onOpen), 5000); });
     this.ws.on('error', (err) => log.warn('live ws error', (err as Error).message));

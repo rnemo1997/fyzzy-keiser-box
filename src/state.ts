@@ -13,19 +13,24 @@ export type Lifecycle = 'new' | 'provisioned' | 'linked' | 'running';
 
 export interface BridgeState {
   deviceUid: string;          // stable public identity (shown in the app)
+  deviceSecret: string;       // private credential the box authenticates with
   lifecycle: Lifecycle;
-  practiceWifi?: { ssid: string };     // creds are applied to the OS, not kept here in pl=aintext
+  practiceWifi?: { ssid: string };     // creds are applied to the OS, not kept here in plaintext
   hub?: { email: string; password: string }; // TODO: encrypt at rest / move to machine-secret
-  cloud?: { deviceToken: string; practiceId: number };
+  cloud?: { practiceId: number };      // set once the cloud reports we've been claimed
   lastExportTo?: string;      // ISO watermark of the newest exported window
 }
 
 const file = path.join(config.dataDir, 'state.json');
 
 function defaults(): BridgeState {
-  // Short, human-friendly device id: FYZ-XXXXXX
+  // Short, human-friendly device id: FYZ-XXXXXX + a long private secret.
   const id = crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 6);
-  return { deviceUid: `FYZ-${id}`, lifecycle: 'new' };
+  return {
+    deviceUid: `FYZ-${id}`,
+    deviceSecret: crypto.randomBytes(32).toString('hex'),
+    lifecycle: 'new',
+  };
 }
 
 let cache: BridgeState | null = null;

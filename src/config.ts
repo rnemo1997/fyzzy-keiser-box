@@ -13,9 +13,9 @@ export const config = {
     host: 'apollo-api.keiser.com', // TLS SNI/cert CN; we pin via --resolve equivalent
   },
 
-  // Fyzzy cloud the bridge phones home to.
+  // Fyzzy cloud the bridge phones home to. Endpoints live under /api/bridge/*.
   cloud: {
-    baseUrl: process.env.FYZZY_CLOUD_URL || 'https://api.fyzzy.nl',
+    baseUrl: process.env.FYZZY_CLOUD_URL || 'https://fyzzy.nl',
     // Realtime uplink (WebSocket). Derived from baseUrl if not set.
     wsUrl: process.env.FYZZY_CLOUD_WS || '',
   },
