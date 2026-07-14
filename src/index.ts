@@ -9,7 +9,7 @@ import { startProvisioningServer } from './provisioning/server.js';
 import { CloudLink } from './cloud/link.js';
 import { KeiserApolloClient } from './hub/apolloClient.js';
 import { enqueue } from './buffer/db.js';
-import { startAutoUpdate } from './update/updater.js';
+import { startAutoUpdate, checkAndUpdate } from './update/updater.js';
 import { logger } from './util/log.js';
 
 const log = logger('main');
@@ -45,6 +45,10 @@ async function heartbeatTick() {
       log.info(`sync command received — re-export from ${reply.sync.from}`);
       saveState({ lastExportTo: reply.sync.from });
       collectorTick().catch((e) => log.warn('collector', e.message));
+    }
+    if (reply.checkUpdate) {
+      log.info('update check requested from cloud');
+      checkAndUpdate().catch((e) => log.warn('ota', e.message)); // restarts if a newer release exists
     }
   } catch (e) {
     // Offline (e.g. still on Keiser WiFi during Phase A) — that's expected.

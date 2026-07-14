@@ -16,6 +16,8 @@ export interface HeartbeatReply {
   practiceId?: number;
   /** On-demand sync command from the cloud: re-export this window now. */
   sync?: { from: string; to: string };
+  /** On-demand: run an OTA update check now (instead of waiting for the timer). */
+  checkUpdate?: boolean;
 }
 
 export class CloudLink {
