@@ -35,6 +35,9 @@ export const config = {
     backfillDays: Number(process.env.BACKFILL_DAYS || 14),
     // Run the daily reconciliation at this local hour.
     dailyHour: Number(process.env.DAILY_EXPORT_HOUR || 3),
+    // How often the collector polls the Hub for new reps. Low = near-live in the
+    // gym (data within ~this interval); each poll is a tiny watermark→now window.
+    collectIntervalMs: Number(process.env.COLLECT_INTERVAL_MS || 10_000),
   },
 
   // Over-the-air updates. The box pulls a single bundled file from GitHub

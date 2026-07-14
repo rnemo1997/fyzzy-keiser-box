@@ -76,7 +76,7 @@ export class KeiserApolloClient {
   async keepAlive(): Promise<void> {
     const { status, body } = await rawRequest(this.target, 'POST', '/api/auth/keep-alive', { token: this.token ?? undefined, timeoutMs: 15_000 });
     if (status === 200) { try { this.absorbToken(JSON.parse(body)); } catch { /* ignore */ } }
-    else log.warn(`keep-alive HTTP ${status}`);
+    else log.debug(`keep-alive HTTP ${status}`); // non-fatal; the collector re-logins as needed
   }
 
   private async getJson(path: string): Promise<any> {

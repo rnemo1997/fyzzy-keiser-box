@@ -30,7 +30,7 @@ async function main() {
   heartbeatTick().catch(() => {});
 
   // Collector loop (only does work once linked).
-  setInterval(() => collectorTick().catch((e) => log.warn('collector', e.message)), 60_000);
+  setInterval(() => collectorTick().catch((e) => log.warn('collector', e.message)), config.export.collectIntervalMs);
 }
 
 async function heartbeatTick() {
