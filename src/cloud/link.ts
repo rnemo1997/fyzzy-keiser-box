@@ -6,6 +6,7 @@ import WebSocket from 'ws';
 import { config } from '../config.js';
 import { loadState, saveState } from '../state.js';
 import { ack, peek, pending } from '../buffer/db.js';
+import { currentVersion } from '../update/updater.js';
 import { logger } from '../util/log.js';
 
 const log = logger('cloud');
@@ -32,7 +33,7 @@ export class CloudLink {
         deviceUid: st.deviceUid,
         deviceSecret: st.deviceSecret,
         state: st.lifecycle,
-        fw: process.env.npm_package_version || '0.1.0',
+        fw: currentVersion(),
         hubReachable,
         pending: pending(),
       }),

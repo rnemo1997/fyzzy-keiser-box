@@ -13,7 +13,7 @@ const log = logger('ota');
 interface GhAsset { name: string; browser_download_url: string; }
 interface GhRelease { tag_name: string; assets: GhAsset[]; prerelease: boolean; }
 
-function currentVersion(): string {
+export function currentVersion(): string {
   try {
     return fs.readFileSync(path.join(config.ota.installDir, 'current', 'VERSION'), 'utf8').trim();
   } catch {

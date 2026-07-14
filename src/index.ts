@@ -81,23 +81,31 @@ async function ensureHubLogin() {
 async function runBackfillAndReconcile() {
   const st = loadState();
   const now = new Date();
-  const start = st.lastExportTo
+  // Walk from the EXACT watermark (not the start of its day) to now, in per-day
+  // windows. Starting at the day boundary would re-export the whole current day
+  // every tick — a flood of already-imported reps. The cursor advances just past
+  // each window so we only ever fetch new reps.
+  let cursor = st.lastExportTo
     ? new Date(st.lastExportTo)
     : new Date(now.getTime() - config.export.backfillDays * 86_400_000);
 
-  for (let day = startOfUtcDay(start); day <= now; day = addDays(day, 1)) {
-    const from = day.toISOString();
-    const to = new Date(Math.min(addDays(day, 1).getTime() - 1, now.getTime())).toISOString();
+  while (cursor < now) {
+    const from = cursor;
+    const dayEnd = new Date(startOfUtcDay(cursor).getTime() + 86_400_000 - 1); // 23:59:59.999 UTC
+    const to = new Date(Math.min(dayEnd.getTime(), now.getTime()));
+    const fromIso = from.toISOString();
+    const toIso = to.toISOString();
     try {
-      const { reps } = await hub.exportWorkoutSets(from, to);
+      const { reps } = await hub.exportWorkoutSets(fromIso, toIso);
       if (reps.length > 0) {
-        enqueue('reps', { from, to, deviceUid: st.deviceUid, reps });
-        log.info(`queued ${reps.length} reps for ${from.slice(0, 10)}`);
+        enqueue('reps', { from: fromIso, to: toIso, deviceUid: st.deviceUid, reps });
+        log.info(`queued ${reps.length} reps for ${fromIso.slice(0, 10)}`);
       }
-      saveState({ lastExportTo: to });
+      saveState({ lastExportTo: toIso });
+      cursor = new Date(to.getTime() + 1); // continue just after this window
     } catch (e: any) {
-      log.warn(`export ${from.slice(0, 10)} failed: ${e.message}`);
-      break; // stop; retry next tick from the same watermark
+      log.warn(`export ${fromIso.slice(0, 10)} failed: ${e.message}`);
+      break; // transient — retry next tick from the same watermark
     }
   }
 }
