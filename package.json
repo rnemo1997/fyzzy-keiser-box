@@ -1,10 +1,12 @@
 {
   "name": "fyzzy-bridge",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "description": "Fyzzy Bridge — on-site collector that reads a Keiser A400 Hub over LAN and streams training data (live + daily export) to Fyzzy cloud. Runs on a Raspberry Pi. Pure-JS so it ships as a single OTA-updatable bundle.",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "bundle": "esbuild src/index.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/bundle.cjs",

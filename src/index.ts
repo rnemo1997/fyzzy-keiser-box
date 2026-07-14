@@ -39,6 +39,13 @@ async function heartbeatTick() {
   try {
     const reply = await cloud.heartbeat(hubReachable);
     if (reply.claimed && loadState().lifecycle === 'running') advertise(); // reflect state in mDNS
+    if (reply.sync) {
+      // Web asked for a catch-up sync: rewind the export watermark so the next
+      // collector run re-exports [from .. now], then kick it off immediately.
+      log.info(`sync command received — re-export from ${reply.sync.from}`);
+      saveState({ lastExportTo: reply.sync.from });
+      collectorTick().catch((e) => log.warn('collector', e.message));
+    }
   } catch (e) {
     // Offline (e.g. still on Keiser WiFi during Phase A) — that's expected.
     log.debug('heartbeat skipped (offline?)');

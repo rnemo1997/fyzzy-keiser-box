@@ -13,6 +13,8 @@ const log = logger('cloud');
 export interface HeartbeatReply {
   claimed: boolean;
   practiceId?: number;
+  /** On-demand sync command from the cloud: re-export this window now. */
+  sync?: { from: string; to: string };
 }
 
 export class CloudLink {
