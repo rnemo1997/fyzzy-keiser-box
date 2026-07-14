@@ -30,8 +30,9 @@ export const config = {
 
   // Batch export cadence.
   export: {
-    // How many days back to backfill on first run.
-    backfillDays: Number(process.env.BACKFILL_DAYS || 30),
+    // How many days back to backfill on first run. The Keiser Hub keeps only
+    // ~2 weeks of history, so 30 just wastes requests on days it 500s for.
+    backfillDays: Number(process.env.BACKFILL_DAYS || 14),
     // Run the daily reconciliation at this local hour.
     dailyHour: Number(process.env.DAILY_EXPORT_HOUR || 3),
   },

@@ -108,6 +108,11 @@ export class KeiserApolloClient {
       token: this.token ?? undefined, timeoutMs: 90_000,
     });
     if (status === 504) throw new Error('export 504 (range too large — shrink the window)');
+    // The Hub answers 500 "UnknownEntity / entity does not exist" for a window with no
+    // workout sets — an empty day, or a day older than its ~2-week retention. That is
+    // not an error for us: treat it as "no reps this day" so the backfill advances
+    // past it instead of getting stuck retrying the same day forever.
+    if (status === 500 && /UnknownEntity|entity does not exist/i.test(body)) return { reps: [] };
     if (status !== 200) throw new Error(`export HTTP ${status} ${body.slice(0, 160)}`);
     const json = JSON.parse(body);
     this.absorbToken(json);
