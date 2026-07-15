@@ -20,6 +20,7 @@ export interface BridgeState {
   cloud?: { practiceId: number };      // set once the cloud reports we've been claimed
   lastExportTo?: string;      // ISO (UTC) watermark of the newest exported window
   windowTzFix?: boolean;      // one-time: rewound the watermark after the export-tz fix
+  icuFix?: boolean;           // one-time: rewound to re-import data the ICU-broken window skipped
 }
 
 const file = path.join(config.dataDir, 'state.json');

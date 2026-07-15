@@ -32,6 +32,20 @@ async function main() {
     saveState({ windowTzFix: true });
   }
 
+  // One-time: the ICU-broken toHubLocal skipped today's data (watermark advanced
+  // over empty windows). Rewind to start of today so the fixed windowing re-imports
+  // it. The cloud importer dedupes, so re-sending is harmless.
+  if (!st.icuFix) {
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+    const wm = st.lastExportTo ? new Date(st.lastExportTo) : null;
+    if (wm && wm.getTime() > startOfToday.getTime()) {
+      saveState({ lastExportTo: startOfToday.toISOString() });
+      log.info(`icu fix: rewound watermark to ${startOfToday.toISOString()} to re-import today`);
+    }
+    saveState({ icuFix: true });
+  }
+
   advertise();
   await startProvisioningServer(() => advertise()); // re-advertise with new state
   startAutoUpdate(); // OTA: pull + apply newer bundles from GitHub Releases
@@ -164,11 +178,31 @@ async function runBackfillAndReconcile() {
   }
 }
 
-/** Format an instant as the Hub's local wall-clock (it filters export by local time). */
+/**
+ * Format an instant as the Hub's local wall-clock — the Hub filters export by
+ * local time, ignoring the offset. We compute the Europe/Amsterdam offset by
+ * hand (DST-aware) instead of via Intl/toLocaleString, because the box's Node
+ * build ships small-ICU: `toLocaleString(..., {timeZone})` silently returns UTC
+ * there, which put the export window ~2h off and returned zero reps.
+ */
 function toHubLocal(d: Date): string {
-  // sv-SE → "YYYY-MM-DD HH:MM:SS" in the given tz. The trailing Z is ignored by
-  // the Hub (it reads the digits as local), we keep it only for a valid shape.
-  return d.toLocaleString('sv-SE', { timeZone: config.hub.tz }).replace(' ', 'T') + '.000Z';
+  const shifted = new Date(d.getTime() + amsterdamOffsetMs(d));
+  return shifted.toISOString().replace(/\.\d{3}Z$/, '.000Z'); // digits are Amsterdam wall-clock
+}
+
+/** Day-of-month of the last Sunday in a month (UTC). */
+function lastSundayDom(year: number, monthZeroIdx: number): number {
+  const lastDay = new Date(Date.UTC(year, monthZeroIdx + 1, 0));
+  return lastDay.getUTCDate() - lastDay.getUTCDay();
+}
+
+/** Europe/Amsterdam UTC offset in ms: CEST(+2h) last-Sun-Mar 01:00 UTC → last-Sun-Oct 01:00 UTC, else CET(+1h). */
+function amsterdamOffsetMs(d: Date): number {
+  const y = d.getUTCFullYear();
+  const dstStart = Date.UTC(y, 2, lastSundayDom(y, 2), 1);
+  const dstEnd = Date.UTC(y, 9, lastSundayDom(y, 9), 1);
+  const t = d.getTime();
+  return (t >= dstStart && t < dstEnd ? 120 : 60) * 60_000;
 }
 function addDays(d: Date, n: number): Date { return new Date(d.getTime() + n * 86_400_000); }
 
