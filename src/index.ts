@@ -21,6 +21,17 @@ async function main() {
   const st = loadState();
   log.info(`Fyzzy Bridge ${st.deviceUid} starting (state=${st.lifecycle})`);
 
+  // One-time: before the export-tz fix the watermark over-ran real coverage by
+  // ~2h (UTC bounds read as local). Rewind once so the gap is re-exported (the
+  // cloud importer dedupes, so re-sending is harmless).
+  if (!st.windowTzFix && st.lastExportTo) {
+    const rewound = new Date(new Date(st.lastExportTo).getTime() - 6 * 3_600_000).toISOString();
+    saveState({ lastExportTo: rewound, windowTzFix: true });
+    log.info(`window-tz fix: rewound watermark to ${rewound} for a one-time backfill`);
+  } else if (!st.windowTzFix) {
+    saveState({ windowTzFix: true });
+  }
+
   advertise();
   await startProvisioningServer(() => advertise()); // re-advertise with new state
   startAutoUpdate(); // OTA: pull + apply newer bundles from GitHub Releases
@@ -97,24 +108,31 @@ async function runBackfillAndReconcile() {
     const from = cursor;
     const dayEnd = new Date(startOfUtcDay(cursor).getTime() + 86_400_000 - 1); // 23:59:59.999 UTC
     const to = new Date(Math.min(dayEnd.getTime(), now.getTime()));
-    const fromIso = from.toISOString();
-    const toIso = to.toISOString();
     try {
-      const { reps } = await hub.exportWorkoutSets(fromIso, toIso);
+      // The Hub reads from/to as LOCAL wall-clock — send hub-local so the window
+      // lines up with the real UTC instants. Watermark stays UTC.
+      const { reps } = await hub.exportWorkoutSets(toHubLocal(from), toHubLocal(to));
       if (reps.length > 0) {
-        enqueue('reps', { from: fromIso, to: toIso, deviceUid: st.deviceUid, reps });
-        log.info(`queued ${reps.length} reps for ${fromIso.slice(0, 10)}`);
+        enqueue('reps', { from: from.toISOString(), to: to.toISOString(), deviceUid: st.deviceUid, reps });
+        log.info(`queued ${reps.length} reps for ${from.toISOString().slice(0, 10)}`);
       }
-      saveState({ lastExportTo: toIso });
+      saveState({ lastExportTo: to.toISOString() });
       cursor = new Date(to.getTime() + 1); // continue just after this window
     } catch (e: any) {
-      log.warn(`export ${fromIso.slice(0, 10)} failed: ${e.message}`);
+      log.warn(`export ${from.toISOString().slice(0, 10)} failed: ${e.message}`);
       break; // transient — retry next tick from the same watermark
     }
   }
 }
 
 function startOfUtcDay(d: Date): Date { const c = new Date(d); c.setUTCHours(0, 0, 0, 0); return c; }
+
+/** Format an instant as the Hub's local wall-clock (it filters export by local time). */
+function toHubLocal(d: Date): string {
+  // sv-SE → "YYYY-MM-DD HH:MM:SS" in the given tz. The trailing Z is ignored by
+  // the Hub (it reads the digits as local), we keep it only for a valid shape.
+  return d.toLocaleString('sv-SE', { timeZone: config.hub.tz }).replace(' ', 'T') + '.000Z';
+}
 function addDays(d: Date, n: number): Date { return new Date(d.getTime() + n * 86_400_000); }
 
 process.on('SIGINT', () => { stopAdvertising(); process.exit(0); });

@@ -18,7 +18,8 @@ export interface BridgeState {
   practiceWifi?: { ssid: string };     // creds are applied to the OS, not kept here in plaintext
   hub?: { email: string; password: string }; // TODO: encrypt at rest / move to machine-secret
   cloud?: { practiceId: number };      // set once the cloud reports we've been claimed
-  lastExportTo?: string;      // ISO watermark of the newest exported window
+  lastExportTo?: string;      // ISO (UTC) watermark of the newest exported window
+  windowTzFix?: boolean;      // one-time: rewound the watermark after the export-tz fix
 }
 
 const file = path.join(config.dataDir, 'state.json');

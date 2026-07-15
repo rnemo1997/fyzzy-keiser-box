@@ -11,6 +11,10 @@ export const config = {
     ip: process.env.HUB_IP || '192.168.150.2',
     port: Number(process.env.HUB_PORT || 8090),
     host: 'apollo-api.keiser.com', // TLS SNI/cert CN; we pin via --resolve equivalent
+    // The Hub filters /workout-set/export by LOCAL wall-clock (it ignores the
+    // offset on from/to). Send the window bounds in this tz so they line up with
+    // real UTC instants; otherwise the box exports a window ~2h in the past.
+    tz: process.env.HUB_TZ || 'Europe/Amsterdam',
   },
 
   // Fyzzy cloud the bridge phones home to. Endpoints live under /api/bridge/*.
