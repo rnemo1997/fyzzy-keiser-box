@@ -76,6 +76,22 @@ export class CloudLink {
     return sent;
   }
 
+  /** Push a near-instant presence snapshot (who is on which machine right now). */
+  async postPresence(present: unknown[]): Promise<void> {
+    const st = loadState();
+    if (!st.cloud) return; // not linked yet
+    const res = await fetch(this.url('/api/bridge/presence'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Uid': st.deviceUid,
+        'X-Device-Secret': st.deviceSecret,
+      },
+      body: JSON.stringify({ present }),
+    });
+    if (!res.ok) throw new Error(`presence HTTP ${res.status}`);
+  }
+
   /** Realtime uplink for live machine events (Phase 4). */
   connectLive(onOpen?: (send: (event: unknown) => void) => void): void {
     const st = loadState();

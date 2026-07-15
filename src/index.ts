@@ -42,6 +42,9 @@ async function main() {
 
   // Collector loop (only does work once linked).
   setInterval(() => collectorTick().catch((e) => log.warn('collector', e.message)), config.export.collectIntervalMs);
+
+  // Near-instant presence loop (who is on which machine right now).
+  setInterval(() => presenceTick().catch((e) => log.warn('presence', e.message)), 5_000);
 }
 
 async function heartbeatTick() {
@@ -77,6 +80,42 @@ async function collectorTick() {
     await cloud.flushOutbox();
   } finally {
     collecting = false;
+  }
+}
+
+let presenceBusy = false;
+/**
+ * Near-instant presence: poll the Hub's active-users per online machine and push
+ * "who is on which machine right now" to the cloud. Drives the live sidebar
+ * without waiting for a set to complete.
+ */
+async function presenceTick() {
+  const st = loadState();
+  if (st.lifecycle !== 'running' || presenceBusy) return;
+  presenceBusy = true;
+  try {
+    await ensureHubLogin();
+    const list = await hub.raw('/api/strength-machine/list?limit=100');
+    const machines = (list.strengthMachines ?? []).filter((m: any) => (m.activeUsers ?? 0) > 0);
+    const present: Array<Record<string, unknown>> = [];
+    for (const m of machines) {
+      try {
+        const au = await hub.raw(`/api/strength-machine/active-users?strengthMachineId=${m.id}&limit=50`);
+        for (const u of (au.users ?? [])) {
+          present.push({
+            external_id: String(u.id),
+            name: [u.profile?.firstName, u.profile?.lastName].filter(Boolean).join(' ') || null,
+            model_number: m.modelNumber != null ? String(m.modelNumber) : null,
+            machine_name: m.name ?? null,
+          });
+        }
+      } catch { /* skip this machine this tick */ }
+    }
+    await cloud.postPresence(present);
+  } catch (e: any) {
+    log.debug(`presence skipped: ${e.message}`);
+  } finally {
+    presenceBusy = false;
   }
 }
 
