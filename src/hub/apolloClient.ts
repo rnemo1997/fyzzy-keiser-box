@@ -97,6 +97,11 @@ export class KeiserApolloClient {
     return j.strengthMachines ?? [];
   }
 
+  /** Raw authenticated GET — for live-source discovery (active-users etc.). */
+  async raw(path: string): Promise<any> {
+    return this.getJson(path);
+  }
+
   /**
    * Export one small window of workout sets. Keep ranges small (≈ per day):
    * large ranges 504 at the nginx proxy (~60s). from/to are ISO 8601 UTC.

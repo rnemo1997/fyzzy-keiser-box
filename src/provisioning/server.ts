@@ -20,6 +20,34 @@ export async function startProvisioningServer(onProvisioned: () => void): Promis
     return { deviceUid: st.deviceUid, state: st.lifecycle, product: 'fyzzy-bridge' };
   });
 
+  // TEMP live-source probe — hits the Hub's real-time endpoints with the box's
+  // stored login, so we can see on-site whether per-rep LIVE data is available
+  // (active-users / online-machines) and how fresh the export is. LAN-only.
+  app.get('/debug/live', async (_req, reply) => {
+    const st = loadState();
+    if (!st.hub) return reply.code(400).send({ error: 'no_hub_creds' });
+    const c = new KeiserApolloClient(config.hub);
+    try {
+      await c.login(st.hub.email, st.hub.password);
+    } catch (e) {
+      return reply.code(502).send({ error: 'hub_login_failed', message: (e as Error).message });
+    }
+    const out: Record<string, unknown> = { at: new Date().toISOString() };
+    const tryCall = async (k: string, fn: () => Promise<unknown>) => {
+      try { out[k] = await fn(); } catch (e) { out[k] = { error: (e as Error).message }; }
+    };
+    await tryCall('online_machines', () => c.raw('/api/strength-machine/online-machines'));
+    await tryCall('active_users', () => c.raw('/api/strength-machine/active-users?limit=50'));
+    await tryCall('machines', () => c.raw('/api/strength-machine/list?limit=50'));
+    const to = new Date();
+    const from = new Date(to.getTime() - 3 * 60 * 1000);
+    await tryCall('recent_export', async () => {
+      const r = await c.exportWorkoutSets(from.toISOString(), to.toISOString());
+      return { window: `${from.toISOString()} → ${to.toISOString()}`, count: r.reps.length, sample: r.reps.slice(-8) };
+    });
+    return out;
+  });
+
   // Phase A: set the practice WiFi. Refused once the box is linked.
   app.post('/provision', async (req, reply) => {
     const st = loadState();
