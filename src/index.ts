@@ -150,32 +150,44 @@ async function ensureHubLogin() {
 async function runBackfillAndReconcile() {
   const st = loadState();
   const now = new Date();
-  // Walk from the EXACT watermark (not the start of its day) to now, in per-day
-  // windows. Starting at the day boundary would re-export the whole current day
-  // every tick — a flood of already-imported reps. The cursor advances just past
-  // each window so we only ever fetch new reps.
+  const LIVE_TAIL_MS = 30 * 60 * 1000; // always re-check the last 30 min
+  const WINDOW_MS = 60 * 60 * 1000;    // 1h backfill windows — beat the nginx 504
+  const tailStart = new Date(now.getTime() - LIVE_TAIL_MS);
+
+  // 1. Backfill history ONCE, up to the live tail, advancing the watermark past
+  //    each window. Data older than the tail is imported exactly once here.
   let cursor = st.lastExportTo
     ? new Date(st.lastExportTo)
     : new Date(now.getTime() - config.export.backfillDays * 86_400_000);
-
-  const WINDOW_MS = 60 * 60 * 1000; // 1h windows — small enough to beat the nginx 504
-  while (cursor < now) {
+  while (cursor < tailStart) {
     const from = cursor;
-    const to = new Date(Math.min(from.getTime() + WINDOW_MS, now.getTime()));
+    const to = new Date(Math.min(from.getTime() + WINDOW_MS, tailStart.getTime()));
     try {
-      // The Hub reads from/to as LOCAL wall-clock — send hub-local so the window
-      // lines up with the real UTC instants. Watermark stays UTC.
       const { reps } = await hub.exportWorkoutSets(toHubLocal(from), toHubLocal(to));
       if (reps.length > 0) {
         enqueue('reps', { from: from.toISOString(), to: to.toISOString(), deviceUid: st.deviceUid, reps });
-        log.info(`queued ${reps.length} reps for ${from.toISOString().slice(0, 10)}`);
+        log.info(`backfill ${from.toISOString().slice(0, 16)}: ${reps.length} reps`);
       }
       saveState({ lastExportTo: to.toISOString() });
-      cursor = new Date(to.getTime() + 1); // continue just after this window
+      cursor = new Date(to.getTime() + 1);
     } catch (e: any) {
-      log.warn(`export ${from.toISOString().slice(0, 10)} failed: ${e.message}`);
-      break; // transient — retry next tick from the same watermark
+      log.warn(`backfill ${from.toISOString().slice(0, 16)} failed: ${e.message}`);
+      return; // transient — retry next tick from the same watermark
     }
+  }
+
+  // 2. ALWAYS re-export the live tail [tailStart, now]. A set that finishes after
+  //    the watermark already passed its window (common with several people on
+  //    several machines) would otherwise never be picked up. The cloud importer
+  //    dedupes, so re-sending the tail every tick is harmless.
+  try {
+    const { reps } = await hub.exportWorkoutSets(toHubLocal(tailStart), toHubLocal(now));
+    if (reps.length > 0) {
+      enqueue('reps', { from: tailStart.toISOString(), to: now.toISOString(), deviceUid: st.deviceUid, reps });
+      log.info(`live tail: ${reps.length} reps`);
+    }
+  } catch (e: any) {
+    log.warn(`live tail failed: ${e.message}`);
   }
 }
 
