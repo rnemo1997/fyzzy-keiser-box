@@ -35,7 +35,7 @@ async function main() {
   // Force a one-time re-import of today whenever RESYNC_VERSION is bumped — used to
   // recover data that an earlier bug skipped (e.g. the token-thrash gap). Rewinds
   // the watermark to start of today; the cloud importer dedupes so it's harmless.
-  const RESYNC_VERSION = 1;
+  const RESYNC_VERSION = 2; // v2: re-import today cleanly now the token-thrash + windowing are fixed (recovers Giel's missing sets)
   if ((st.resyncVersion ?? 0) < RESYNC_VERSION) {
     const startOfToday = new Date();
     startOfToday.setUTCHours(0, 0, 0, 0);
