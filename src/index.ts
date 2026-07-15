@@ -150,45 +150,61 @@ async function ensureHubLogin() {
 async function runBackfillAndReconcile() {
   const st = loadState();
   const now = new Date();
-  const LIVE_TAIL_MS = 30 * 60 * 1000; // always re-check the last 30 min
-  const WINDOW_MS = 60 * 60 * 1000;    // 1h backfill windows — beat the nginx 504
-  const tailStart = new Date(now.getTime() - LIVE_TAIL_MS);
+  const dayStart = startOfLocalDay(now);
 
-  // 1. Backfill history ONCE, up to the live tail, advancing the watermark past
-  //    each window. Data older than the tail is imported exactly once here.
+  // 1. History BEFORE today — walk once in day-sized windows, advancing the
+  //    watermark. Older days are imported exactly once here.
   let cursor = st.lastExportTo
     ? new Date(st.lastExportTo)
     : new Date(now.getTime() - config.export.backfillDays * 86_400_000);
-  while (cursor < tailStart) {
+  while (cursor.getTime() < dayStart.getTime() - 1000) {
     const from = cursor;
-    const to = new Date(Math.min(from.getTime() + WINDOW_MS, tailStart.getTime()));
+    const to = new Date(Math.min(from.getTime() + 86_400_000, dayStart.getTime()));
     try {
-      const { reps } = await hub.exportWorkoutSets(toHubLocal(from), toHubLocal(to));
-      if (reps.length > 0) {
-        enqueue('reps', { from: from.toISOString(), to: to.toISOString(), deviceUid: st.deviceUid, reps });
-        log.info(`backfill ${from.toISOString().slice(0, 16)}: ${reps.length} reps`);
-      }
+      await exportRange(from, to, st.deviceUid);
       saveState({ lastExportTo: to.toISOString() });
       cursor = new Date(to.getTime() + 1);
     } catch (e: any) {
-      log.warn(`backfill ${from.toISOString().slice(0, 16)} failed: ${e.message}`);
+      log.warn(`backfill ${from.toISOString().slice(0, 10)} failed: ${e.message}`);
       return; // transient — retry next tick from the same watermark
     }
   }
 
-  // 2. ALWAYS re-export the live tail [tailStart, now]. A set that finishes after
-  //    the watermark already passed its window (common with several people on
-  //    several machines) would otherwise never be picked up. The cloud importer
-  //    dedupes, so re-sending the tail every tick is harmless.
+  // 2. TODAY — re-export the WHOLE day in one call every tick, exactly like the
+  //    complete CSV export. Windowing dropped sets on the boundaries; a single
+  //    contiguous export can't. The cloud importer dedupes, so re-sending is free.
   try {
-    const { reps } = await hub.exportWorkoutSets(toHubLocal(tailStart), toHubLocal(now));
+    await exportRange(dayStart, now, st.deviceUid);
+  } catch (e: any) {
+    log.warn(`today export failed: ${e.message}`);
+  }
+}
+
+/** Export [from,to] as one call; on a 504 (range too large) split in half and retry. */
+async function exportRange(from: Date, to: Date, deviceUid: string): Promise<void> {
+  try {
+    const { reps } = await hub.exportWorkoutSets(toHubLocal(from), toHubLocal(to));
     if (reps.length > 0) {
-      enqueue('reps', { from: tailStart.toISOString(), to: now.toISOString(), deviceUid: st.deviceUid, reps });
-      log.info(`live tail: ${reps.length} reps`);
+      enqueue('reps', { from: from.toISOString(), to: to.toISOString(), deviceUid, reps });
+      log.info(`export ${from.toISOString().slice(11, 16)}–${to.toISOString().slice(11, 16)}: ${reps.length} reps`);
     }
   } catch (e: any) {
-    log.warn(`live tail failed: ${e.message}`);
+    if (/504/.test(e.message ?? '') && to.getTime() - from.getTime() > 10 * 60 * 1000) {
+      const mid = new Date((from.getTime() + to.getTime()) / 2);
+      await exportRange(from, mid, deviceUid);
+      await exportRange(mid, to, deviceUid);
+    } else {
+      throw e;
+    }
   }
+}
+
+/** The UTC instant of local (Europe/Amsterdam) 00:00 for the day containing d. */
+function startOfLocalDay(d: Date): Date {
+  const off = amsterdamOffsetMs(d);
+  const local = new Date(d.getTime() + off);
+  local.setUTCHours(0, 0, 0, 0);
+  return new Date(local.getTime() - off);
 }
 
 /**
