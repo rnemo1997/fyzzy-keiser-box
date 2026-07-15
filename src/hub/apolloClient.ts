@@ -52,7 +52,20 @@ function rawRequest(t: HubTarget, method: string, path: string, opts: {
 
 export class KeiserApolloClient {
   private token: string | null = null;
+  // The Hub rotates the accessToken on every response and invalidates the old
+  // one. So two concurrent callers (the collector + the presence poller) would
+  // clobber each other's token → 401. Serialize every Hub request through this
+  // lock so calls run one-at-a-time and always use the freshest token.
+  private lock: Promise<void> = Promise.resolve();
   constructor(private readonly target: HubTarget) {}
+
+  private async withLock<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = this.lock;
+    let release!: () => void;
+    this.lock = new Promise((r) => { release = r; });
+    await prev;
+    try { return await fn(); } finally { release(); }
+  }
 
   /** Rotate to the freshest accessToken any response hands back. */
   private absorbToken(json: any) {
@@ -62,32 +75,38 @@ export class KeiserApolloClient {
   get currentToken(): string | null { return this.token; }
 
   async login(email: string, password: string): Promise<LoginResult> {
-    const { status, body } = await rawRequest(this.target, 'POST', '/api/auth/login', {
-      body: JSON.stringify({ email, password }), timeoutMs: 20_000,
+    return this.withLock(async () => {
+      const { status, body } = await rawRequest(this.target, 'POST', '/api/auth/login', {
+        body: JSON.stringify({ email, password }), timeoutMs: 20_000,
+      });
+      if (status !== 200) throw new Error(`login failed: HTTP ${status} ${body.slice(0, 200)}`);
+      const json = JSON.parse(body);
+      this.absorbToken(json);
+      if (!this.token) throw new Error('login ok but no accessToken in response');
+      log.info(`login ok user=${json.user?.id} role=${json.user?.accountType}`);
+      return { userId: json.user?.id, accountType: json.user?.accountType, token: this.token };
     });
-    if (status !== 200) throw new Error(`login failed: HTTP ${status} ${body.slice(0, 200)}`);
-    const json = JSON.parse(body);
-    this.absorbToken(json);
-    if (!this.token) throw new Error('login ok but no accessToken in response');
-    log.info(`login ok user=${json.user?.id} role=${json.user?.accountType}`);
-    return { userId: json.user?.id, accountType: json.user?.accountType, token: this.token };
   }
 
   async keepAlive(): Promise<void> {
-    const { status, body } = await rawRequest(this.target, 'POST', '/api/auth/keep-alive', { token: this.token ?? undefined, timeoutMs: 15_000 });
-    if (status === 200) { try { this.absorbToken(JSON.parse(body)); } catch { /* ignore */ } }
-    else log.debug(`keep-alive HTTP ${status}`); // non-fatal; the collector re-logins as needed
+    return this.withLock(async () => {
+      const { status, body } = await rawRequest(this.target, 'POST', '/api/auth/keep-alive', { token: this.token ?? undefined, timeoutMs: 15_000 });
+      if (status === 200) { try { this.absorbToken(JSON.parse(body)); } catch { /* ignore */ } }
+      else log.debug(`keep-alive HTTP ${status}`); // non-fatal; the collector re-logins as needed
+    });
   }
 
   private async getJson(path: string): Promise<any> {
-    const { status, body } = await rawRequest(this.target, 'GET', path, { token: this.token ?? undefined });
-    // The Hub invalidates our token whenever the same account logs in elsewhere.
-    // Drop it on 401/403 so the next tick re-logins instead of looping on a dead token.
-    if (status === 401 || status === 403) this.token = null;
-    if (status !== 200) throw new Error(`GET ${path} -> HTTP ${status} ${body.slice(0, 160)}`);
-    const json = JSON.parse(body);
-    this.absorbToken(json);
-    return json;
+    return this.withLock(async () => {
+      const { status, body } = await rawRequest(this.target, 'GET', path, { token: this.token ?? undefined });
+      // The Hub invalidates our token whenever the same account logs in elsewhere.
+      // Drop it on 401/403 so the next tick re-logins instead of looping on a dead token.
+      if (status === 401 || status === 403) this.token = null;
+      if (status !== 200) throw new Error(`GET ${path} -> HTTP ${status} ${body.slice(0, 160)}`);
+      const json = JSON.parse(body);
+      this.absorbToken(json);
+      return json;
+    });
   }
 
   async listUsers(limit = 500): Promise<any[]> {
@@ -111,34 +130,36 @@ export class KeiserApolloClient {
    * Returns parsed reps.csv rows + the raw time_series.csv.
    */
   async exportWorkoutSets(fromIso: string, toIso: string): Promise<ExportResult> {
-    const q = `from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`;
-    const { status, body } = await rawRequest(this.target, 'GET', `/api/workout-set/export?${q}`, {
-      token: this.token ?? undefined, timeoutMs: 90_000,
-    });
-    if (status === 401 || status === 403) { this.token = null; throw new Error('export unauthorized — token cleared'); }
-    if (status === 504) throw new Error('export 504 (range too large — shrink the window)');
-    // The Hub answers 500 "UnknownEntity / entity does not exist" for a window with no
-    // workout sets — an empty day, or a day older than its ~2-week retention. That is
-    // not an error for us: treat it as "no reps this day" so the backfill advances
-    // past it instead of getting stuck retrying the same day forever.
-    if (status === 500 && /UnknownEntity|entity does not exist/i.test(body)) return { reps: [] };
-    if (status !== 200) throw new Error(`export HTTP ${status} ${body.slice(0, 160)}`);
-    const json = JSON.parse(body);
-    this.absorbToken(json);
-    const exp = json.workoutSetExport;
-    if (!exp?.data) return { reps: [] };
-    const zipBuf = Buffer.from(exp.data, exp.encoding === 'base64' ? 'base64' : 'utf8');
-    const zip = new AdmZip(zipBuf);
+    return this.withLock(async () => {
+      const q = `from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`;
+      const { status, body } = await rawRequest(this.target, 'GET', `/api/workout-set/export?${q}`, {
+        token: this.token ?? undefined, timeoutMs: 90_000,
+      });
+      if (status === 401 || status === 403) { this.token = null; throw new Error('export unauthorized — token cleared'); }
+      if (status === 504) throw new Error('export 504 (range too large — shrink the window)');
+      // The Hub answers 500 "UnknownEntity / entity does not exist" for a window with no
+      // workout sets — an empty day, or a day older than its ~2-week retention. That is
+      // not an error for us: treat it as "no reps this day" so the backfill advances
+      // past it instead of getting stuck retrying the same day forever.
+      if (status === 500 && /UnknownEntity|entity does not exist/i.test(body)) return { reps: [] };
+      if (status !== 200) throw new Error(`export HTTP ${status} ${body.slice(0, 160)}`);
+      const json = JSON.parse(body);
+      this.absorbToken(json);
+      const exp = json.workoutSetExport;
+      if (!exp?.data) return { reps: [] };
+      const zipBuf = Buffer.from(exp.data, exp.encoding === 'base64' ? 'base64' : 'utf8');
+      const zip = new AdmZip(zipBuf);
 
-    let reps: RepRow[] = [];
-    let timeSeriesCsv: string | undefined;
-    for (const entry of zip.getEntries()) {
-      const name = entry.entryName.toLowerCase();
-      if (name === 'reps.csv') reps = parseCsv(entry.getData().toString('utf8'));
-      else if (name === 'time_series.csv') timeSeriesCsv = entry.getData().toString('utf8');
-    }
-    log.info(`export ${fromIso}..${toIso}: ${reps.length} reps`);
-    return { reps, timeSeriesCsv };
+      let reps: RepRow[] = [];
+      let timeSeriesCsv: string | undefined;
+      for (const entry of zip.getEntries()) {
+        const name = entry.entryName.toLowerCase();
+        if (name === 'reps.csv') reps = parseCsv(entry.getData().toString('utf8'));
+        else if (name === 'time_series.csv') timeSeriesCsv = entry.getData().toString('utf8');
+      }
+      log.info(`export ${fromIso}..${toIso}: ${reps.length} reps`);
+      return { reps, timeSeriesCsv };
+    });
   }
 }
 

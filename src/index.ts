@@ -32,18 +32,19 @@ async function main() {
     saveState({ windowTzFix: true });
   }
 
-  // One-time: the ICU-broken toHubLocal skipped today's data (watermark advanced
-  // over empty windows). Rewind to start of today so the fixed windowing re-imports
-  // it. The cloud importer dedupes, so re-sending is harmless.
-  if (!st.icuFix) {
+  // Force a one-time re-import of today whenever RESYNC_VERSION is bumped — used to
+  // recover data that an earlier bug skipped (e.g. the token-thrash gap). Rewinds
+  // the watermark to start of today; the cloud importer dedupes so it's harmless.
+  const RESYNC_VERSION = 1;
+  if ((st.resyncVersion ?? 0) < RESYNC_VERSION) {
     const startOfToday = new Date();
     startOfToday.setUTCHours(0, 0, 0, 0);
     const wm = st.lastExportTo ? new Date(st.lastExportTo) : null;
     if (wm && wm.getTime() > startOfToday.getTime()) {
       saveState({ lastExportTo: startOfToday.toISOString() });
-      log.info(`icu fix: rewound watermark to ${startOfToday.toISOString()} to re-import today`);
+      log.info(`resync v${RESYNC_VERSION}: rewound to ${startOfToday.toISOString()} to re-import today`);
     }
-    saveState({ icuFix: true });
+    saveState({ resyncVersion: RESYNC_VERSION });
   }
 
   advertise();

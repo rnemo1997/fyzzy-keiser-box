@@ -21,6 +21,7 @@ export interface BridgeState {
   lastExportTo?: string;      // ISO (UTC) watermark of the newest exported window
   windowTzFix?: boolean;      // one-time: rewound the watermark after the export-tz fix
   icuFix?: boolean;           // one-time: rewound to re-import data the ICU-broken window skipped
+  resyncVersion?: number;     // bump RESYNC_VERSION in index.ts to force a one-time re-import of today
 }
 
 const file = path.join(config.dataDir, 'state.json');
