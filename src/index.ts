@@ -143,10 +143,10 @@ async function runBackfillAndReconcile() {
     ? new Date(st.lastExportTo)
     : new Date(now.getTime() - config.export.backfillDays * 86_400_000);
 
+  const WINDOW_MS = 60 * 60 * 1000; // 1h windows — small enough to beat the nginx 504
   while (cursor < now) {
     const from = cursor;
-    const dayEnd = new Date(startOfUtcDay(cursor).getTime() + 86_400_000 - 1); // 23:59:59.999 UTC
-    const to = new Date(Math.min(dayEnd.getTime(), now.getTime()));
+    const to = new Date(Math.min(from.getTime() + WINDOW_MS, now.getTime()));
     try {
       // The Hub reads from/to as LOCAL wall-clock — send hub-local so the window
       // lines up with the real UTC instants. Watermark stays UTC.
@@ -163,8 +163,6 @@ async function runBackfillAndReconcile() {
     }
   }
 }
-
-function startOfUtcDay(d: Date): Date { const c = new Date(d); c.setUTCHours(0, 0, 0, 0); return c; }
 
 /** Format an instant as the Hub's local wall-clock (it filters export by local time). */
 function toHubLocal(d: Date): string {

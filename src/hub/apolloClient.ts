@@ -81,6 +81,9 @@ export class KeiserApolloClient {
 
   private async getJson(path: string): Promise<any> {
     const { status, body } = await rawRequest(this.target, 'GET', path, { token: this.token ?? undefined });
+    // The Hub invalidates our token whenever the same account logs in elsewhere.
+    // Drop it on 401/403 so the next tick re-logins instead of looping on a dead token.
+    if (status === 401 || status === 403) this.token = null;
     if (status !== 200) throw new Error(`GET ${path} -> HTTP ${status} ${body.slice(0, 160)}`);
     const json = JSON.parse(body);
     this.absorbToken(json);
@@ -112,6 +115,7 @@ export class KeiserApolloClient {
     const { status, body } = await rawRequest(this.target, 'GET', `/api/workout-set/export?${q}`, {
       token: this.token ?? undefined, timeoutMs: 90_000,
     });
+    if (status === 401 || status === 403) { this.token = null; throw new Error('export unauthorized — token cleared'); }
     if (status === 504) throw new Error('export 504 (range too large — shrink the window)');
     // The Hub answers 500 "UnknownEntity / entity does not exist" for a window with no
     // workout sets — an empty day, or a day older than its ~2-week retention. That is
