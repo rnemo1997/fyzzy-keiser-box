@@ -39,9 +39,16 @@ export const config = {
     backfillDays: Number(process.env.BACKFILL_DAYS || 14),
     // Run the daily reconciliation at this local hour.
     dailyHour: Number(process.env.DAILY_EXPORT_HOUR || 3),
-    // How often the collector polls the Hub for new reps. Low = near-live in the
-    // gym (data within ~this interval); each poll is a tiny watermark→now window.
-    collectIntervalMs: Number(process.env.COLLECT_INTERVAL_MS || 10_000),
+    // How often the collector polls the Hub for new reps.
+    collectIntervalMs: Number(process.env.COLLECT_INTERVAL_MS || 5_000),
+    // Fast path: every tick exports only this trailing window. Small payload,
+    // so a tick finishes in ~1-2s and the next one is not skipped by the
+    // `collecting` guard. This is what makes the gym feel live.
+    tailMinutes: Number(process.env.TAIL_MINUTES || 6),
+    // Slow path: re-export the whole local day this often, to catch anything
+    // the tail missed (late-finished sets, window edges). Expensive — it grows
+    // with the day — so it must NOT run every tick.
+    reconcileIntervalMs: Number(process.env.RECONCILE_INTERVAL_MS || 180_000),
   },
 
   // Over-the-air updates. The box pulls a single bundled file from GitHub

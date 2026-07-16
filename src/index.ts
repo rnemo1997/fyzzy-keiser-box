@@ -170,13 +170,30 @@ async function runBackfillAndReconcile() {
     }
   }
 
-  // 2. TODAY — re-export the WHOLE day in one call every tick, exactly like the
-  //    complete CSV export. Windowing dropped sets on the boundaries; a single
-  //    contiguous export can't. The cloud importer dedupes, so re-sending is free.
+  // 2. TODAY — two paths, because doing only the full day made every tick take
+  //    40-100s (it grows all day), and the `collecting` guard then skipped the
+  //    ticks in between. That delay, not the Hub, was what made the gym feel
+  //    laggy. Doing only a narrow window is fast but drops sets on the edges.
+  //    So: a cheap tail every tick for liveness, a full day now and then for
+  //    completeness. The cloud importer dedupes, so overlap is free.
+
+  // 2a. Fast path — trailing window, runs every tick (~1-2s).
+  const tailFrom = new Date(Math.max(dayStart.getTime(), now.getTime() - config.export.tailMinutes * 60_000));
   try {
-    await exportRange(dayStart, now, st.deviceUid);
+    await exportRange(tailFrom, now, st.deviceUid);
   } catch (e: any) {
-    log.warn(`today export failed: ${e.message}`);
+    log.warn(`tail export failed: ${e.message}`);
+  }
+
+  // 2b. Slow path — whole day, only every reconcileIntervalMs.
+  const lastRec = st.lastReconcileAt ? new Date(st.lastReconcileAt).getTime() : 0;
+  if (now.getTime() - lastRec >= config.export.reconcileIntervalMs) {
+    try {
+      await exportRange(dayStart, now, st.deviceUid);
+      saveState({ lastReconcileAt: now.toISOString() });
+    } catch (e: any) {
+      log.warn(`day reconcile failed: ${e.message}`);
+    }
   }
 }
 
