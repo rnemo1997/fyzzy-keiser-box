@@ -218,13 +218,18 @@ async function exportRange(from: Date, to: Date, deviceUid: string, live = false
 }
 
 /**
- * Telemetry: how stale is the freshest rep we just pulled? "Completed At" is the
- * Hub's own millis timestamp of when the rep finished, so (now − newest) is the
- * true Hub→box lag — the piece we can't see from the cloud. A small, steady lag
- * (~poll interval) means tightening the poll is enough; a lag that jumps to a
- * whole set's duration means the Hub only exports finished SETS, and we need the
- * realtime /log/subscribe channel instead. Stashed in state so the heartbeat can
- * ship it to the cloud and we can read it remotely (no SSH).
+ * Telemetry: the delivery latency of a rep, measured the moment a genuinely NEW
+ * rep appears. "Completed At" is the Hub's own millis timestamp of when the rep
+ * finished, so (now − newest) is the true Hub→box lag — the piece we can't see
+ * from the cloud. A small, steady lag (~poll interval) means tightening the poll
+ * is enough; a lag that jumps to a whole set's duration means the Hub only
+ * exports finished SETS, and we need the realtime /log/subscribe channel instead.
+ *
+ * Crucially we only record when the newest-rep timestamp ADVANCES. Otherwise, an
+ * idle gym (no new reps) would just show how long ago the last rep was — a
+ * meaningless, ever-growing number, not the pipeline latency. When idle the last
+ * real reading is kept (and the admin marks it "oud"). Stashed in state so the
+ * heartbeat can ship it to the cloud and we can read it remotely (no SSH).
  */
 function measureLiveLag(reps: Array<Record<string, string>>): void {
   let newest = 0;
@@ -233,11 +238,14 @@ function measureLiveLag(reps: Array<Record<string, string>>): void {
     if (Number.isFinite(t) && t > newest) newest = t;
   }
   if (newest <= 0) return;
-  const lagMs = Date.now() - newest;
-  // Ignore obviously bogus values (clock skew → negative, or backfill rows).
-  if (lagMs < -5_000 || lagMs > 30 * 60_000) return;
-  saveState({ lastLiveLagMs: lagMs, lastLiveLagAt: new Date().toISOString() });
-  log.info(`live-lag: newest rep ${(lagMs / 1000).toFixed(1)}s old (${reps.length} reps in window)`);
+
+  const prev = loadState().lastRepTs ?? 0;
+  if (prev === 0) { saveState({ lastRepTs: newest }); return; } // bootstrap: don't measure an old rep as if it were fresh
+  if (newest <= prev) return;                                   // no new rep this tick → idle/between reps, nothing to learn
+
+  const lagMs = Math.max(0, Date.now() - newest); // clamp clock skew
+  saveState({ lastRepTs: newest, lastLiveLagMs: lagMs, lastLiveLagAt: new Date().toISOString() });
+  log.info(`live-lag: new rep delivered in ${(lagMs / 1000).toFixed(1)}s`);
 }
 
 /** The UTC instant of local (Europe/Amsterdam) 00:00 for the day containing d. */
