@@ -39,8 +39,10 @@ export const config = {
     backfillDays: Number(process.env.BACKFILL_DAYS || 14),
     // Run the daily reconciliation at this local hour.
     dailyHour: Number(process.env.DAILY_EXPORT_HOUR || 3),
-    // How often the collector polls the Hub for new reps.
-    collectIntervalMs: Number(process.env.COLLECT_INTERVAL_MS || 5_000),
+    // How often the collector polls the Hub for new reps. The tail export takes
+    // ~1-2s and the `collecting` guard skips overlapping ticks, so 3s keeps the
+    // gym feeling live without hammering the Hub's per-response token rotation.
+    collectIntervalMs: Number(process.env.COLLECT_INTERVAL_MS || 3_000),
     // Fast path: every tick exports only this trailing window. Small payload,
     // so a tick finishes in ~1-2s and the next one is not skipped by the
     // `collecting` guard. This is what makes the gym feel live.

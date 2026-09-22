@@ -38,6 +38,8 @@ export class CloudLink {
         fw: currentVersion(),
         hubReachable,
         pending: pending(),
+        liveLagMs: st.lastLiveLagMs ?? null,
+        liveLagAt: st.lastLiveLagAt ?? null,
       }),
     });
     if (!res.ok) throw new Error(`heartbeat HTTP ${res.status}`);

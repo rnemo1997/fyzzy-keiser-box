@@ -180,7 +180,7 @@ async function runBackfillAndReconcile() {
   // 2a. Fast path — trailing window, runs every tick (~1-2s).
   const tailFrom = new Date(Math.max(dayStart.getTime(), now.getTime() - config.export.tailMinutes * 60_000));
   try {
-    await exportRange(tailFrom, now, st.deviceUid);
+    await exportRange(tailFrom, now, st.deviceUid, true);
   } catch (e: any) {
     log.warn(`tail export failed: ${e.message}`);
   }
@@ -198,12 +198,13 @@ async function runBackfillAndReconcile() {
 }
 
 /** Export [from,to] as one call; on a 504 (range too large) split in half and retry. */
-async function exportRange(from: Date, to: Date, deviceUid: string): Promise<void> {
+async function exportRange(from: Date, to: Date, deviceUid: string, live = false): Promise<void> {
   try {
     const { reps } = await hub.exportWorkoutSets(toHubLocal(from), toHubLocal(to));
     if (reps.length > 0) {
       enqueue('reps', { from: from.toISOString(), to: to.toISOString(), deviceUid, reps });
       log.info(`export ${from.toISOString().slice(11, 16)}–${to.toISOString().slice(11, 16)}: ${reps.length} reps`);
+      if (live) measureLiveLag(reps);
     }
   } catch (e: any) {
     if (/504/.test(e.message ?? '') && to.getTime() - from.getTime() > 10 * 60 * 1000) {
@@ -214,6 +215,29 @@ async function exportRange(from: Date, to: Date, deviceUid: string): Promise<voi
       throw e;
     }
   }
+}
+
+/**
+ * Telemetry: how stale is the freshest rep we just pulled? "Completed At" is the
+ * Hub's own millis timestamp of when the rep finished, so (now − newest) is the
+ * true Hub→box lag — the piece we can't see from the cloud. A small, steady lag
+ * (~poll interval) means tightening the poll is enough; a lag that jumps to a
+ * whole set's duration means the Hub only exports finished SETS, and we need the
+ * realtime /log/subscribe channel instead. Stashed in state so the heartbeat can
+ * ship it to the cloud and we can read it remotely (no SSH).
+ */
+function measureLiveLag(reps: Array<Record<string, string>>): void {
+  let newest = 0;
+  for (const r of reps) {
+    const t = Number(r['Completed At']);
+    if (Number.isFinite(t) && t > newest) newest = t;
+  }
+  if (newest <= 0) return;
+  const lagMs = Date.now() - newest;
+  // Ignore obviously bogus values (clock skew → negative, or backfill rows).
+  if (lagMs < -5_000 || lagMs > 30 * 60_000) return;
+  saveState({ lastLiveLagMs: lagMs, lastLiveLagAt: new Date().toISOString() });
+  log.info(`live-lag: newest rep ${(lagMs / 1000).toFixed(1)}s old (${reps.length} reps in window)`);
 }
 
 /** The UTC instant of local (Europe/Amsterdam) 00:00 for the day containing d. */

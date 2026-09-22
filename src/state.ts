@@ -20,6 +20,8 @@ export interface BridgeState {
   cloud?: { practiceId: number };      // set once the cloud reports we've been claimed
   lastExportTo?: string;      // ISO (UTC) watermark of the newest exported window
   lastReconcileAt?: string;   // ISO (UTC) last whole-day re-export (the slow completeness pass)
+  lastLiveLagMs?: number;     // newest-rep lag (now − rep "Completed At") from the last live tail export
+  lastLiveLagAt?: string;     // ISO (UTC) when lastLiveLagMs was measured
   windowTzFix?: boolean;      // one-time: rewound the watermark after the export-tz fix
   icuFix?: boolean;           // one-time: rewound to re-import data the ICU-broken window skipped
   resyncVersion?: number;     // bump RESYNC_VERSION in index.ts to force a one-time re-import of today
