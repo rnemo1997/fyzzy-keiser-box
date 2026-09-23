@@ -1,0 +1,23 @@
+[Unit]
+Description=Fyzzy Bridge first-boot enrollment (WireGuard tunnel + device identity)
+After=network-online.target
+Wants=network-online.target
+Before=fyzzy-bridge.service
+ConditionPathExists=/opt/fyzzy-bridge/current/bundle.cjs
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+EnvironmentFile=-/etc/fyzzy-bridge.env
+# Reads /boot/.../fyzzy-provision.json, generates a WireGuard keypair + device
+# secret, POSTs /api/bridge/enroll, writes /etc/wireguard/wg0.conf and brings up
+# wg-quick@wg0. Idempotent: does nothing once enrolled. Root, because it writes
+# /etc/wireguard, sets the hostname and enables the wg unit.
+ExecStart=/usr/bin/node /opt/fyzzy-bridge/current/bundle.cjs enroll
+# The enrolled identity lives in the shared data dir; hand it back to the
+# collector user so its heartbeat/ingest can read it.
+ExecStartPost=/bin/chown -R fyzzy:fyzzy /var/lib/fyzzy-bridge
+
+[Install]
+WantedBy=multi-user.target

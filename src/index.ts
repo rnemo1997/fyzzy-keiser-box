@@ -10,9 +10,23 @@ import { CloudLink } from './cloud/link.js';
 import { KeiserApolloClient } from './hub/apolloClient.js';
 import { enqueue } from './buffer/db.js';
 import { startAutoUpdate, checkAndUpdate } from './update/updater.js';
+import { runEnrollOnce } from './remote/enroll.js';
+import { syncAuthorizedKeysOnce } from './remote/authkeys.js';
 import { logger } from './util/log.js';
 
 const log = logger('main');
+
+// Sub-commands share the single OTA-updatable bundle. systemd's oneshot enroll
+// unit and the authorized_keys timer invoke `bundle.cjs enroll` / `authkeys`;
+// no arg runs the collector orchestrator.
+const subcommand = process.argv[2];
+if (subcommand === 'enroll') {
+  runEnrollOnce().then(() => process.exit(0)).catch((e) => { log.error('enroll fatal', e.message); process.exit(1); });
+} else if (subcommand === 'authkeys') {
+  syncAuthorizedKeysOnce().then(() => process.exit(0)).catch((e) => { log.error('authkeys fatal', e.message); process.exit(1); });
+} else {
+  main().catch((e) => { log.error('fatal', e.message); process.exit(1); });
+}
 const cloud = new CloudLink();
 const hub = new KeiserApolloClient(config.hub);
 let collecting = false;
@@ -286,5 +300,3 @@ function addDays(d: Date, n: number): Date { return new Date(d.getTime() + n * 8
 
 process.on('SIGINT', () => { stopAdvertising(); process.exit(0); });
 process.on('SIGTERM', () => { stopAdvertising(); process.exit(0); });
-
-main().catch((e) => { log.error('fatal', e.message); process.exit(1); });

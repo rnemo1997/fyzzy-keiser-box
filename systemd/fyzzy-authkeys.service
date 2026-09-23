@@ -1,0 +1,14 @@
+[Unit]
+Description=Fyzzy Bridge — sync fleet-managed SSH authorized_keys
+After=network-online.target fyzzy-enroll.service
+Wants=network-online.target
+ConditionPathExists=/opt/fyzzy-bridge/current/bundle.cjs
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-/etc/fyzzy-bridge.env
+# Pulls the central key registry (GET /api/bridge/authorized-keys) and writes it
+# atomically to the service-user's authorized_keys, always keeping the local
+# bootstrap key. Root, so it can chown the target user's ~/.ssh correctly.
+ExecStart=/usr/bin/node /opt/fyzzy-bridge/current/bundle.cjs authkeys

@@ -7,6 +7,7 @@ import { config } from '../config.js';
 import { loadState, saveState } from '../state.js';
 import { ack, peek, pending } from '../buffer/db.js';
 import { currentVersion } from '../update/updater.js';
+import { handshakeAgeSec } from '../remote/wg.js';
 import { logger } from '../util/log.js';
 
 const log = logger('cloud');
@@ -28,6 +29,9 @@ export class CloudLink {
   /** Announce presence + discover claim status. Called on a timer. */
   async heartbeat(hubReachable: boolean): Promise<HeartbeatReply> {
     const st = loadState();
+    // Second liveness signal (net-layer): seconds since the last WireGuard
+    // handshake with the hub. null when not enrolled / tunnel down.
+    const wgHandshakeAgeSec = await handshakeAgeSec();
     const res = await fetch(this.url('/api/bridge/heartbeat'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -40,6 +44,7 @@ export class CloudLink {
         pending: pending(),
         liveLagMs: st.lastLiveLagMs ?? null,
         liveLagAt: st.lastLiveLagAt ?? null,
+        wgHandshakeAgeSec, // server maps this to wg_last_handshake_at
       }),
     });
     if (!res.ok) throw new Error(`heartbeat HTTP ${res.status}`);

@@ -26,6 +26,18 @@ export interface BridgeState {
   windowTzFix?: boolean;      // one-time: rewound the watermark after the export-tz fix
   icuFix?: boolean;           // one-time: rewound to re-import data the ICU-broken window skipped
   resyncVersion?: number;     // bump RESYNC_VERSION in index.ts to force a one-time re-import of today
+  // Remote-access enrollment (WireGuard). Written by the first-boot enroll-service
+  // (src/remote/enroll.ts). Once enrolled we DON'T enroll again (idempotent).
+  // Note: after a successful enroll deviceUid/deviceSecret above are overwritten
+  // with the SERVER-provisioned identity, so heartbeat/ingest/authkeys all use it.
+  enroll?: {
+    serverUrl: string;        // Fyzzy server that owns this Bridge (from provisioning file)
+    wgPubkey: string;         // our WireGuard PUBLIC key (private lives only in wg0.conf)
+    wgPrivkey?: string;       // kept ONLY until wg0.conf is written, then cleared
+    overlayIp?: string;       // assigned /32 overlay IP (= SSH target)
+    practiceId?: number | null;
+    enrolledAt?: string;      // ISO — set once the enroll POST succeeded
+  };
 }
 
 const file = path.join(config.dataDir, 'state.json');

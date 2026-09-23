@@ -1,0 +1,10 @@
+[Unit]
+Description=Fyzzy Bridge — periodic fleet SSH key sync (every 5 min + at boot)
+
+[Timer]
+OnBootSec=45
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -62,6 +62,28 @@ export const config = {
     installDir: process.env.INSTALL_DIR || '/opt/fyzzy-bridge',
   },
 
+  // Remote-access layer (WireGuard tunnel + central SSH-key sync). See
+  // mijnfysio/BRIDGE-REMOTE-ACCESS-PLAN.md. The first-boot enroll-service reads
+  // the provisioning file and phones the enroll endpoint; a timer keeps the SSH
+  // authorized_keys in sync with the fleet-wide registry.
+  remote: {
+    // Where the SD-card's boot partition drops the per-Bridge provisioning file.
+    // Both classic and the newer bootfs location are checked.
+    provisionPaths: (process.env.FYZZY_PROVISION_PATHS
+      || '/boot/firmware/fyzzy-provision.json:/boot/fyzzy-provision.json')
+      .split(':')
+      .filter(Boolean),
+    // WireGuard client interface + its persistent config on the Pi.
+    wgInterface: process.env.WG_INTERFACE || 'wg0',
+    wgConfPath: process.env.WG_CONF_PATH || '/etc/wireguard/wg0.conf',
+    // OS user whose ~/.ssh/authorized_keys the fleet key-sync manages, and whose
+    // login the admin uses over the overlay (ssh <user>@10.100.0.x).
+    sshUser: process.env.FYZZY_SSH_USER || 'fyzzy',
+    // Break-glass key(s) baked into the image — ALWAYS kept in authorized_keys,
+    // never removed by a sync, so a broken/empty response can't lock us out.
+    bootstrapKeysPath: process.env.FYZZY_BOOTSTRAP_KEYS || '/etc/fyzzy/bootstrap_authorized_keys',
+  },
+
   version: process.env.FYZZY_BRIDGE_VERSION || '0.1.0',
 } as const;
 

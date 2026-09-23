@@ -1,7 +1,9 @@
 [Unit]
 Description=Fyzzy Bridge (Keiser Hub collector)
-After=network-online.target NetworkManager.service
+After=network-online.target NetworkManager.service fyzzy-enroll.service
 Wants=network-online.target
+# Ordered after first-boot enroll so the collector uses the enrolled identity.
+# A failed/absent enroll does NOT block the collector (only ordering, not a dep).
 
 [Service]
 Type=simple
