@@ -55,6 +55,19 @@ else
   iw reg set "$WIFI_COUNTRY" 2>/dev/null || true
 fi
 
+# Captive-portal auto-open: NetworkManager's "shared" mode (our setup hotspot)
+# runs its own dnsmasq. Resolve EVERY name to the box (10.42.0.1) so the phone's
+# OS captive-portal probe (captive.apple.com, connectivitycheck.gstatic.com, …)
+# hits our portal and pops the "Sign in" sheet automatically — the customer never
+# has to type an IP. Only affects the setup AP; gone once wlan0 joins the practice
+# WiFi. 10.42.0.1 is NM shared mode's fixed gateway address.
+mkdir -p /etc/NetworkManager/dnsmasq-shared.d
+cat > /etc/NetworkManager/dnsmasq-shared.d/00-fyzzy-captive.conf <<'DNSMASQ'
+# Wildcard DNS for the Fyzzy Bridge setup portal — see install.sh.
+address=/#/10.42.0.1
+DNSMASQ
+chmod 644 /etc/NetworkManager/dnsmasq-shared.d/00-fyzzy-captive.conf
+
 # Shared state dir — used by BOTH the (root) enroll-service and the (fyzzy)
 # collector, so the enrolled identity written on first boot is readable by the
 # collector's heartbeat. The enroll-service chowns it back to fyzzy afterwards.
