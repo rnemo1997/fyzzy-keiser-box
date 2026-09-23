@@ -11,7 +11,7 @@
 import http from 'node:http';
 import { config } from '../config.js';
 import { logger } from '../util/log.js';
-import { startAp, stopAp, scanWifi, connectWifi, hasUplink, ifaceHasInternet } from './ap.js';
+import { startAp, stopAp, scanWifi, connectWifi, hasUplink, ifaceHasInternet, reboot } from './ap.js';
 
 const log = logger('portal');
 
@@ -76,9 +76,12 @@ export async function maybeRunSetupPortal(): Promise<void> {
   }
   log.info('no internet uplink — opening on-site WiFi setup portal');
   const portal = await startSetupPortal();
-  await portal.whenOnline;
-  await portal.stop();
-  log.info('uplink established — setup portal closed, continuing normal flow');
+  await portal.whenOnline;   // resolves ONLY on a confirmed internet uplink
+  await portal.stop();       // drop the AP (response already sent to the phone)
+  // First-boot enroll failed earlier without internet and won't retry, so reboot to
+  // enroll cleanly. `whenOnline` never fires on a failed /connect → never reboots then.
+  await delay(5_000);
+  await reboot();
 }
 
 /**
@@ -91,9 +94,11 @@ export async function runSetupPortalStandalone(): Promise<void> {
   const cleanup = async () => { await portal.stop().catch(() => {}); process.exit(0); };
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
-  await portal.whenOnline;
+  await portal.whenOnline;   // resolves ONLY on a confirmed internet uplink
   await portal.stop();
-  log.info('setup portal finished (uplink up)');
+  log.info('setup portal finished (uplink up) — rebooting for a clean enroll');
+  await delay(5_000);
+  await reboot();
 }
 
 // ---- HTTP handling ---------------------------------------------------------
@@ -234,13 +239,13 @@ const T = {
   nl: { title:"WiFi instellen", intro:"Kies het WiFi-netwerk van de praktijk en vul het wachtwoord in. Het kastje verbindt dan met internet en komt online in Fyzzy.",
     network:"Netwerk", ssidManual:"Netwerknaam (SSID)", password:"Wachtwoord", show:"toon", hide:"verberg", connect:"Verbinden",
     scanning:"Scannen…", other:"Ander netwerk…", noNets:"Geen netwerken gevonden — tik ↻ of kies 'Ander netwerk'",
-    connecting:"Verbinden met het netwerk…", success:"Verbonden! Je kunt deze pagina sluiten — het kastje komt zo online in Fyzzy.",
+    connecting:"Verbinden met het netwerk…", success:"Verbonden — het kastje herstart en komt zo online in Fyzzy. Je kunt deze pagina sluiten.",
     wrong:"Verbinden mislukt. Controleer het wachtwoord en probeer opnieuw.", noInternet:"Verbonden met de WiFi, maar geen internet. Klopt het netwerk?",
     needSsid:"Kies of typ een netwerknaam.", foot:"Verbonden met \\"Fyzzy-Bridge-Setup\\" · Fyzzy Health & Performance Platform" },
   en: { title:"Set up WiFi", intro:"Pick the practice WiFi network and enter its password. The box will connect to the internet and come online in Fyzzy.",
     network:"Network", ssidManual:"Network name (SSID)", password:"Password", show:"show", hide:"hide", connect:"Connect",
     scanning:"Scanning…", other:"Other network…", noNets:"No networks found — tap ↻ or choose 'Other network'",
-    connecting:"Connecting to the network…", success:"Connected! You can close this page — the box will come online in Fyzzy shortly.",
+    connecting:"Connecting to the network…", success:"Connected — the box is restarting and will come online in Fyzzy shortly. You can close this page.",
     wrong:"Connection failed. Check the password and try again.", noInternet:"Connected to WiFi but no internet. Is this the right network?",
     needSsid:"Choose or type a network name.", foot:"Connected to \\"Fyzzy-Bridge-Setup\\" · Fyzzy Health & Performance Platform" }
 };

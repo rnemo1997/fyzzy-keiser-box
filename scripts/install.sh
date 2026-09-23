@@ -20,6 +20,15 @@ fi
 
 id fyzzy &>/dev/null || useradd --system --create-home --home-dir /home/fyzzy fyzzy
 
+# The collector runs as `fyzzy` but the on-site setup portal must reboot the box
+# after joining WiFi (so first-boot enroll runs cleanly with internet). Allow ONLY
+# `systemctl reboot` without a password — nothing else.
+SYSTEMCTL="$(command -v systemctl)"
+cat > /etc/sudoers.d/fyzzy-bridge <<SUDO
+fyzzy ALL=(root) NOPASSWD: $SYSTEMCTL reboot
+SUDO
+chmod 440 /etc/sudoers.d/fyzzy-bridge
+
 # Shared state dir — used by BOTH the (root) enroll-service and the (fyzzy)
 # collector, so the enrolled identity written on first boot is readable by the
 # collector's heartbeat. The enroll-service chowns it back to fyzzy afterwards.

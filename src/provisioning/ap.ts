@@ -128,6 +128,18 @@ export async function hasUplink(): Promise<boolean> {
   return curlOk([]);
 }
 
+/**
+ * Reboot the box. Called ONLY after the setup portal has confirmed a real internet
+ * uplink: the first-boot `fyzzy-enroll.service` failed earlier (no internet then) and
+ * never retries, so a clean reboot lets it run with internet — enrolling + bringing up
+ * WireGuard. On the reboot the uplink is present, so the portal is skipped.
+ */
+export async function reboot(): Promise<void> {
+  log.info('rebooting so first-boot enroll runs cleanly now internet is up');
+  await exec('sudo', ['systemctl', 'reboot'], { timeout: 10_000 })
+    .catch((e) => log.warn(`reboot failed: ${e?.stderr || e?.message}`));
+}
+
 /** Does a SPECIFIC interface reach the internet? Used to know when wlan0 got a real uplink. */
 export async function ifaceHasInternet(iface: string): Promise<boolean> {
   return curlOk(['--interface', iface]);
