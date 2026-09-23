@@ -12,6 +12,7 @@ import http from 'node:http';
 import { config } from '../config.js';
 import { logger } from '../util/log.js';
 import { startAp, stopAp, scanWifi, connectWifi, hasUplink, ifaceHasInternet, reboot } from './ap.js';
+import { FYZZY_ICON, FYZZY_WORDMARK_WHITE } from './brand.js';
 
 const log = logger('portal');
 
@@ -166,57 +167,66 @@ function delay(ms: number): Promise<void> { return new Promise((r) => setTimeout
 
 // ---- The page (self-contained, bilingual NL/EN, no external assets) --------
 
-const PAGE = `<!doctype html>
+export const PAGE = `<!doctype html>
 <html lang="nl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Fyzzy Bridge — WiFi</title>
 <style>
-  :root { --bg:#0f1226; --card:#1a1f3d; --line:#2c3358; --fg:#eef1ff; --muted:#9aa3c7; --accent:#6B2D8E; --accent2:#8b5cf6; --ok:#22c55e; --err:#ef4444; }
+  :root { --bg:#0b0e20; --line:#2a3159; --fg:#eef1ff; --muted:#9aa3c7; --accent:#6B2D8E; --accent2:#8b5cf6; --ok:#22c55e; --err:#ef4444; }
   * { box-sizing:border-box; }
-  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:linear-gradient(160deg,#0f1226,#151a35); color:var(--fg); min-height:100vh; padding:24px 16px calc(24px + env(safe-area-inset-bottom)); }
-  .wrap { max-width:440px; margin:0 auto; }
-  .brand { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
-  .dot { width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-weight:800; }
-  h1 { font-size:20px; margin:0; }
-  .lang { margin-left:auto; }
-  .lang button { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:4px 9px; font-size:12px; cursor:pointer; }
-  .lang button.on { color:var(--fg); border-color:var(--accent2); }
-  p.sub { color:var(--muted); font-size:14px; margin:6px 0 20px; line-height:1.45; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; }
+  html, body { overflow-x:hidden; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--fg); min-height:100vh; padding:0 16px calc(28px + env(safe-area-inset-bottom)); }
+  img { max-width:100%; }
+  .glow { position:fixed; inset:0 0 auto 0; height:360px; background:radial-gradient(120% 100% at 50% -12%, rgba(139,92,246,.30), rgba(107,45,142,.12) 45%, transparent 72%); pointer-events:none; z-index:0; }
+  .wrap { position:relative; z-index:1; max-width:440px; margin:0 auto; padding-top:calc(18px + env(safe-area-inset-top)); }
+  .lang { display:flex; justify-content:flex-end; gap:6px; }
+  .lang button { background:rgba(255,255,255,.04); border:1px solid var(--line); color:var(--muted); border-radius:9px; padding:5px 11px; font-size:12px; font-weight:600; cursor:pointer; }
+  .lang button.on { color:var(--fg); border-color:var(--accent2); background:rgba(139,92,246,.16); }
+  .brandhead { text-align:center; margin:16px 0 22px; }
+  .mark { width:66px; height:66px; border-radius:18px; box-shadow:0 14px 36px rgba(107,45,142,.55), 0 0 0 1px rgba(255,255,255,.06) inset; }
+  .wordmark { height:26px; margin-top:14px; opacity:.98; }
+  .eyebrow { margin-top:9px; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+  .card { background:linear-gradient(180deg, rgba(29,35,70,.92), rgba(18,22,46,.92)); border:1px solid var(--line); border-radius:20px; padding:22px 18px; box-shadow:0 22px 54px rgba(0,0,0,.38); }
+  h1.title { font-size:20px; margin:0 0 6px; text-align:center; }
+  p.sub { color:var(--muted); font-size:14px; margin:0 0 18px; line-height:1.45; text-align:center; }
   label { display:block; font-size:13px; color:var(--muted); margin:14px 0 6px; }
-  label:first-child { margin-top:0; }
-  select, input, button.primary { width:100%; font-size:16px; border-radius:11px; border:1px solid var(--line); background:#11152e; color:var(--fg); padding:13px 12px; }
+  label:first-of-type { margin-top:0; }
+  select, input, button.primary { width:100%; font-size:16px; border-radius:12px; border:1px solid var(--line); background:#10142e; color:var(--fg); padding:13px 12px; }
+  select:focus, input:focus { outline:none; border-color:var(--accent2); }
   .row { display:flex; gap:8px; }
   .row select { flex:1; }
-  button.icon { width:48px; border-radius:11px; border:1px solid var(--line); background:#11152e; color:var(--fg); font-size:18px; }
+  button.icon { width:50px; border-radius:12px; border:1px solid var(--line); background:#10142e; color:var(--fg); font-size:18px; }
   .pw { position:relative; }
-  .pw button { position:absolute; right:6px; top:6px; bottom:6px; border:none; background:none; color:var(--muted); font-size:13px; padding:0 10px; }
-  button.primary { margin-top:20px; border:none; font-weight:700; background:linear-gradient(135deg,var(--accent),var(--accent2)); cursor:pointer; }
-  button.primary:disabled { opacity:.55; }
-  .status { margin-top:16px; font-size:14px; line-height:1.5; display:none; padding:12px 14px; border-radius:11px; }
+  .pw button { position:absolute; right:6px; top:6px; bottom:6px; border:none; background:none; color:var(--accent2); font-size:13px; font-weight:600; padding:0 10px; }
+  button.primary { margin-top:22px; border:none; font-weight:700; font-size:16px; background:linear-gradient(135deg,var(--accent),var(--accent2)); cursor:pointer; box-shadow:0 12px 28px rgba(107,45,142,.45); }
+  button.primary:disabled { opacity:.55; box-shadow:none; }
+  .status { margin-top:16px; font-size:14px; line-height:1.5; display:none; padding:12px 14px; border-radius:12px; }
   .status.show { display:block; }
   .status.info { background:#1c2450; }
   .status.ok { background:rgba(34,197,94,.13); color:#bbf7d0; }
   .status.err { background:rgba(239,68,68,.13); color:#fecaca; }
   .spin { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:s .7s linear infinite; vertical-align:-2px; margin-right:7px; }
   @keyframes s { to { transform:rotate(360deg); } }
-  .foot { color:var(--muted); font-size:12px; text-align:center; margin-top:18px; line-height:1.5; }
+  .foot { color:var(--muted); font-size:12px; text-align:center; margin-top:20px; line-height:1.5; }
 </style>
 </head>
 <body>
+<div class="glow"></div>
 <div class="wrap">
-  <div class="brand">
-    <div class="dot">F</div>
-    <h1 data-t="title">WiFi instellen</h1>
-    <div class="lang">
-      <button data-lang="nl" class="on">NL</button>
-      <button data-lang="en">EN</button>
-    </div>
+  <div class="lang">
+    <button data-lang="nl" class="on">NL</button>
+    <button data-lang="en">EN</button>
   </div>
-  <p class="sub" data-t="intro">Kies het WiFi-netwerk van de praktijk en vul het wachtwoord in. Het kastje verbindt dan met internet en komt online in Fyzzy.</p>
+  <div class="brandhead">
+    <img class="mark" src="${FYZZY_ICON}" alt="Fyzzy" width="66" height="66">
+    <div><img class="wordmark" src="${FYZZY_WORDMARK_WHITE}" alt="Fyzzy"></div>
+    <div class="eyebrow" data-t="tagline">Health &amp; Performance Platform</div>
+  </div>
   <div class="card">
+    <h1 class="title" data-t="title">WiFi instellen</h1>
+    <p class="sub" data-t="intro">Kies het WiFi-netwerk van de praktijk en vul het wachtwoord in. Het kastje verbindt dan met internet en komt online in Fyzzy.</p>
     <label data-t="network">Netwerk</label>
     <div class="row">
       <select id="ssid"><option value="" data-t="scanning">Scannen…</option></select>
@@ -232,22 +242,22 @@ const PAGE = `<!doctype html>
     <button class="primary" id="connect" data-t="connect">Verbinden</button>
     <div class="status" id="status"></div>
   </div>
-  <div class="foot" data-t="foot">Verbonden met "Fyzzy-Bridge-Setup" · Fyzzy Health &amp; Performance Platform</div>
+  <div class="foot" data-t="foot">Verbonden met het setup-netwerk "Fyzzy-Bridge-Setup"</div>
 </div>
 <script>
 const T = {
-  nl: { title:"WiFi instellen", intro:"Kies het WiFi-netwerk van de praktijk en vul het wachtwoord in. Het kastje verbindt dan met internet en komt online in Fyzzy.",
+  nl: { title:"WiFi instellen", tagline:"Health & Performance Platform", intro:"Kies het WiFi-netwerk van de praktijk en vul het wachtwoord in. Het kastje verbindt dan met internet en komt online in Fyzzy.",
     network:"Netwerk", ssidManual:"Netwerknaam (SSID)", password:"Wachtwoord", show:"toon", hide:"verberg", connect:"Verbinden",
     scanning:"Scannen…", other:"Ander netwerk…", noNets:"Geen netwerken gevonden — tik ↻ of kies 'Ander netwerk'",
     connecting:"Verbinden met het netwerk…", success:"Verbonden — het kastje herstart en komt zo online in Fyzzy. Je kunt deze pagina sluiten.",
     wrong:"Verbinden mislukt. Controleer het wachtwoord en probeer opnieuw.", noInternet:"Verbonden met de WiFi, maar geen internet. Klopt het netwerk?",
-    needSsid:"Kies of typ een netwerknaam.", foot:"Verbonden met \\"Fyzzy-Bridge-Setup\\" · Fyzzy Health & Performance Platform" },
-  en: { title:"Set up WiFi", intro:"Pick the practice WiFi network and enter its password. The box will connect to the internet and come online in Fyzzy.",
+    needSsid:"Kies of typ een netwerknaam.", foot:"Verbonden met het setup-netwerk \\"Fyzzy-Bridge-Setup\\"" },
+  en: { title:"Set up WiFi", tagline:"Health & Performance Platform", intro:"Pick the practice WiFi network and enter its password. The box will connect to the internet and come online in Fyzzy.",
     network:"Network", ssidManual:"Network name (SSID)", password:"Password", show:"show", hide:"hide", connect:"Connect",
     scanning:"Scanning…", other:"Other network…", noNets:"No networks found — tap ↻ or choose 'Other network'",
     connecting:"Connecting to the network…", success:"Connected — the box is restarting and will come online in Fyzzy shortly. You can close this page.",
     wrong:"Connection failed. Check the password and try again.", noInternet:"Connected to WiFi but no internet. Is this the right network?",
-    needSsid:"Choose or type a network name.", foot:"Connected to \\"Fyzzy-Bridge-Setup\\" · Fyzzy Health & Performance Platform" }
+    needSsid:"Choose or type a network name.", foot:"Connected to the setup network \\"Fyzzy-Bridge-Setup\\"" }
 };
 let lang = "nl";
 const $ = (id) => document.getElementById(id);
