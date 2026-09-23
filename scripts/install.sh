@@ -29,6 +29,32 @@ fyzzy ALL=(root) NOPASSWD: $SYSTEMCTL reboot
 SUDO
 chmod 440 /etc/sudoers.d/fyzzy-bridge
 
+# The setup portal starts a WiFi hotspot and joins the practice WiFi as the
+# `fyzzy` user, which NetworkManager gates behind polkit. Without this rule nmcli
+# fails with "Not authorized to control networking" and the AP never appears.
+cat > /etc/polkit-1/rules.d/50-fyzzy-nm.rules <<'POLKIT'
+// Laat de Fyzzy Bridge-service (user fyzzy) NetworkManager besturen zodat de
+// on-site WiFi setup-portal een hotspot kan starten en de praktijk-WiFi kan joinen.
+polkit.addRule(function(action, subject) {
+    if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 &&
+        subject.user === "fyzzy") {
+        return polkit.Result.YES;
+    }
+});
+POLKIT
+chmod 644 /etc/polkit-1/rules.d/50-fyzzy-nm.rules
+systemctl restart polkit 2>/dev/null || true
+
+# The WiFi radio needs a regulatory domain before it will run as an access point
+# (a fresh Pi OS reports "country 00: DFS-UNSET" and AP mode fails). Default NL;
+# override for another destination with WIFI_COUNTRY=AU ./install.sh
+WIFI_COUNTRY="${WIFI_COUNTRY:-NL}"
+if command -v raspi-config >/dev/null; then
+  raspi-config nonint do_wifi_country "$WIFI_COUNTRY" 2>/dev/null || iw reg set "$WIFI_COUNTRY" 2>/dev/null || true
+else
+  iw reg set "$WIFI_COUNTRY" 2>/dev/null || true
+fi
+
 # Shared state dir — used by BOTH the (root) enroll-service and the (fyzzy)
 # collector, so the enrolled identity written on first boot is readable by the
 # collector's heartbeat. The enroll-service chowns it back to fyzzy afterwards.
