@@ -18,6 +18,24 @@ Architecture & protocol: see `mijnfysio/FYZZY-BRIDGE-ARCHITECTURE.md` and
 - **Collector**: login op de Hub → per-dag `/workout-set/export` (kleine ranges i.v.m. nginx-504)
   → `reps.csv` → durable outbox (SQLite) → upload naar cloud. Live-kanaal volgt (Fase 4).
 
+## On-site WiFi-setup (captive portal)
+Heeft de box **geen internet-uplink** (nieuwe box, of het praktijk-WiFi is nog niet
+ingesteld), dan host hij zelf een setup-WiFi en een mobielvriendelijke webpagina:
+
+1. Verbind je telefoon met WiFi **`Fyzzy-Bridge-Setup`** (wachtwoord **`fyzzysetup`**).
+2. De setup-pagina opent meestal vanzelf (captive-portal); zo niet, open **http://10.42.0.1**.
+3. Kies het praktijk-WiFi, vul het wachtwoord in, tik **Verbinden**.
+
+Eén WiFi-radio (`wlan0`) deelt de tijd: eerst hotspot voor de setup, daarna joint de
+box het gekozen netwerk als internet-uplink. De bedrade interface (`eth0`) blijft het
+Keiser-subnet bedienen maar wordt van de default-route gehaald (`ipv4.never-default`),
+zodat internet via `wlan0` gaat. Zodra internet bevestigd is stopt de AP en loopt de
+normale flow (enroll → WireGuard → collector) door. Is er al internet (bekend WiFi),
+dan wordt de portal overgeslagen.
+
+Alles via NetworkManager (`nmcli`), NM "shared"-modus geeft de AP `10.42.0.1` + DHCP.
+Handmatig starten (bv. voor her-configuratie): `node current/bundle.cjs setup-portal`.
+
 ## Ontwikkelen
 ```bash
 npm install
@@ -30,7 +48,10 @@ npm run dev        # tsx watch
 |---|---|---|
 | `HUB_IP` / `HUB_PORT` | `192.168.150.2` / `8090` | Keiser Hub |
 | `HUB_EMAIL` / `HUB_PASSWORD` | — | **fallback** Keiser-login. Normaal wordt de per-praktijk Keiser-login in de app-onboarding ingevoerd en op de box opgeslagen — niet via env. |
-| `UPLINK_IFACE` | `wlan1` | interface naar het praktijk-net |
+| `UPLINK_IFACE` | `wlan1` | interface naar het praktijk-net (dual-interface app-onboarding) |
+| `SETUP_AP_SSID` / `SETUP_AP_PASSWORD` | `Fyzzy-Bridge-Setup` / `fyzzysetup` | on-site setup-AP (captive portal) |
+| `SETUP_IFACE` / `SETUP_KEISER_IFACE` | `wlan0` / `eth0` | WiFi-radio (AP→client) resp. bedrade Keiser-interface |
+| `SETUP_PORTAL_PORT` | `80` | poort van de setup-portal (10.42.0.1) |
 | `FYZZY_CLOUD_URL` | `https://fyzzy.nl` | cloud base-url (`/api/bridge/*`) |
 | `FYZZY_DATA_DIR` | `~/.fyzzy-bridge` | state + buffer |
 | `BACKFILL_DAYS` | `30` | eerste sync haalt zoveel dagen op |

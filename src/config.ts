@@ -29,6 +29,35 @@ export const config = {
     port: Number(process.env.PROVISION_PORT || 8088),
   },
 
+  // On-site WiFi setup ("captive portal"). When the box has no internet uplink,
+  // it hosts its own AP on wlan0 and serves a browser page where the customer
+  // picks their practice WiFi + enters the password. wlan0 time-shares: hotspot
+  // for setup, then it joins the chosen network as the internet uplink while the
+  // wired interface (eth0) keeps talking to the Keiser subnet. See src/provisioning/portal.ts.
+  setup: {
+    // AP the customer connects their phone to.
+    apSsid: process.env.SETUP_AP_SSID || 'Fyzzy-Bridge-Setup',
+    // NetworkManager requires a >=8 char WPA passphrase for `dev wifi hotspot`.
+    apPassword: process.env.SETUP_AP_PASSWORD || 'fyzzysetup',
+    // The single WiFi radio that hosts the AP and later joins the practice WiFi.
+    iface: process.env.SETUP_IFACE || 'wlan0',
+    // Port the portal binds. 80 so the phone opens http://10.42.0.1 without a port
+    // (and so OS captive-portal probes hit it). Needs CAP_NET_BIND_SERVICE (set in
+    // the systemd unit); override to e.g. 8080 in unprivileged setups.
+    portalPort: Number(process.env.SETUP_PORTAL_PORT || 80),
+    // Fixed AP IP NetworkManager's "shared" mode assigns to wlan0 (+ built-in DHCP).
+    apIp: process.env.SETUP_AP_IP || '10.42.0.1',
+    // The wired interface that faces the Keiser subnet — kept OFF the default route
+    // (ipv4.never-default) so internet goes via wlan0 once the practice WiFi is joined.
+    keiserIface: process.env.SETUP_KEISER_IFACE || 'eth0',
+    // How long to wait at boot for an uplink (saved WiFi / DHCP) before opening the
+    // setup AP. Avoids popping the portal during a normal slow boot.
+    noUplinkGraceMs: Number(process.env.SETUP_NO_UPLINK_GRACE_MS || 45_000),
+    // How often, while the portal is open, to re-check whether wlan0 got a real
+    // uplink (customer joined, or saved WiFi came up) so we can close the AP.
+    onlinePollMs: Number(process.env.SETUP_ONLINE_POLL_MS || 10_000),
+  },
+
   // mDNS service type advertised on the LAN for app discovery.
   mdnsType: 'fyzzy-bridge',
 

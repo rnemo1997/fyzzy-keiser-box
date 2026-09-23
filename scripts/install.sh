@@ -60,6 +60,12 @@ HUB_IP=192.168.150.2
 HUB_PORT=8090
 # Keiser-login komt normaal via de app-onboarding (per praktijk).
 UPLINK_IFACE=wlan1
+# On-site WiFi setup ("captive portal"): hosted on wlan0 when there's no uplink.
+SETUP_AP_SSID=Fyzzy-Bridge-Setup
+SETUP_AP_PASSWORD=fyzzysetup
+SETUP_IFACE=wlan0
+SETUP_KEISER_IFACE=eth0
+SETUP_PORTAL_PORT=80
 FYZZY_CLOUD_URL=https://fyzzy.nl
 FYZZY_BRIDGE_VERSION=$VERSION
 # Gedeelde state-dir (root enroll-service + fyzzy collector).

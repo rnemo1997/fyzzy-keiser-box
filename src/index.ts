@@ -12,6 +12,7 @@ import { enqueue } from './buffer/db.js';
 import { startAutoUpdate, checkAndUpdate } from './update/updater.js';
 import { runEnrollOnce } from './remote/enroll.js';
 import { syncAuthorizedKeysOnce } from './remote/authkeys.js';
+import { maybeRunSetupPortal, runSetupPortalStandalone } from './provisioning/portal.js';
 import { logger } from './util/log.js';
 
 const log = logger('main');
@@ -24,6 +25,9 @@ if (subcommand === 'enroll') {
   runEnrollOnce().then(() => process.exit(0)).catch((e) => { log.error('enroll fatal', e.message); process.exit(1); });
 } else if (subcommand === 'authkeys') {
   syncAuthorizedKeysOnce().then(() => process.exit(0)).catch((e) => { log.error('authkeys fatal', e.message); process.exit(1); });
+} else if (subcommand === 'setup-portal') {
+  // On-site WiFi setup AP + portal, unconditionally (manual re-config / testing).
+  runSetupPortalStandalone().catch((e) => { log.error('setup-portal fatal', e.message); process.exit(1); });
 } else {
   main().catch((e) => { log.error('fatal', e.message); process.exit(1); });
 }
@@ -64,6 +68,11 @@ async function main() {
   advertise();
   await startProvisioningServer(() => advertise()); // re-advertise with new state
   startAutoUpdate(); // OTA: pull + apply newer bundles from GitHub Releases
+
+  // On-site WiFi setup: if there's no internet uplink after a short grace period,
+  // host the "Fyzzy-Bridge-Setup" AP + portal so the customer can pick their WiFi.
+  // No-op when an uplink is already present (saved WiFi). Runs in the background.
+  maybeRunSetupPortal().catch((e) => log.warn('setup-portal', e.message));
 
   // Heartbeat + claim-discovery loop.
   setInterval(() => heartbeatTick().catch((e) => log.warn('heartbeat', e.message)), 30_000);
