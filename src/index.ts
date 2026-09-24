@@ -12,7 +12,8 @@ import { enqueue } from './buffer/db.js';
 import { startAutoUpdate, checkAndUpdate } from './update/updater.js';
 import { runEnrollOnce } from './remote/enroll.js';
 import { syncAuthorizedKeysOnce } from './remote/authkeys.js';
-import { maybeRunSetupPortal, runSetupPortalStandalone } from './provisioning/portal.js';
+import { maybeRunSetupPortal, runSetupPortalStandalone, startSetupPortal, type PortalHandle } from './provisioning/portal.js';
+import { reboot } from './provisioning/ap.js';
 import { logger } from './util/log.js';
 
 const log = logger('main');
@@ -34,6 +35,12 @@ if (subcommand === 'enroll') {
 const cloud = new CloudLink();
 const hub = new KeiserApolloClient(config.hub);
 let collecting = false;
+
+// Self-heal watchdog: last time we successfully reached the Fyzzy cloud, and the
+// recovery AP we open when that goes stale (so a box on a bad WiFi can be fixed
+// on-site without SSH/console).
+let lastCloudOkAt = Date.now();
+let recoveryPortal: PortalHandle | null = null;
 
 async function main() {
   const st = loadState();
@@ -90,6 +97,14 @@ async function heartbeatTick() {
   const hubReachable = await hub.keepAlive().then(() => true).catch(() => false);
   try {
     const reply = await cloud.heartbeat(hubReachable);
+    // Cloud reachable → reset the self-heal timer. If a recovery AP was up (e.g.
+    // the box got back online via ethernet), drop it now.
+    lastCloudOkAt = Date.now();
+    if (recoveryPortal) {
+      log.info('cloud reachable again — closing recovery WiFi portal');
+      recoveryPortal.stop().catch(() => {});
+      recoveryPortal = null;
+    }
     if (reply.claimed && loadState().lifecycle === 'running') advertise(); // reflect state in mDNS
     if (reply.sync) {
       // Web asked for a catch-up sync: rewind the export watermark so the next
@@ -114,6 +129,39 @@ async function heartbeatTick() {
   } catch (e) {
     // Offline (e.g. still on Keiser WiFi during Phase A) — that's expected.
     log.debug('heartbeat skipped (offline?)');
+  }
+
+  await maybeOpenRecoveryPortal();
+}
+
+/**
+ * Self-heal: if an enrolled box hasn't reached the Fyzzy cloud for
+ * `recoveryAfterMs` (e.g. it joined a WiFi with no real internet, or a captive
+ * portal), re-open the "Fyzzy-Bridge-Setup" AP so someone on-site can pick a
+ * working WiFi — no SSH or console needed. Closes automatically once the cloud
+ * is reachable again (via the portal join, or e.g. an ethernet cable).
+ */
+async function maybeOpenRecoveryPortal(): Promise<void> {
+  if (recoveryPortal) return;                 // already recovering
+  if (!loadState().deviceSecret) return;      // not enrolled yet → boot portal handles first setup
+  if (Date.now() - lastCloudOkAt < config.setup.recoveryAfterMs) return;
+
+  const mins = Math.round((Date.now() - lastCloudOkAt) / 60_000);
+  log.warn(`no Fyzzy cloud contact for ${mins}m — reopening "${config.setup.apSsid}" to fix the WiFi on-site`);
+  try {
+    recoveryPortal = await startSetupPortal();
+    recoveryPortal.whenOnline
+      .then(async () => {
+        await recoveryPortal?.stop().catch(() => {});
+        recoveryPortal = null;
+        log.info('recovery: uplink restored via portal — rebooting for a clean reconnect');
+        await new Promise((r) => setTimeout(r, 5_000));
+        await reboot();
+      })
+      .catch(() => {});
+  } catch (e) {
+    log.warn('recovery-portal', (e as Error).message);
+    recoveryPortal = null;
   }
 }
 

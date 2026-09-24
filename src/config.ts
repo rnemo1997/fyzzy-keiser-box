@@ -56,6 +56,9 @@ export const config = {
     // How often, while the portal is open, to re-check whether wlan0 got a real
     // uplink (customer joined, or saved WiFi came up) so we can close the AP.
     onlinePollMs: Number(process.env.SETUP_ONLINE_POLL_MS || 10_000),
+    // Self-heal: if an enrolled box hasn't reached the Fyzzy cloud for this long,
+    // re-open the setup AP so someone on-site can fix the WiFi without SSH/console.
+    recoveryAfterMs: Number(process.env.SETUP_RECOVERY_AFTER_MS || 300_000), // 5 min
   },
 
   // mDNS service type advertised on the LAN for app discovery.
