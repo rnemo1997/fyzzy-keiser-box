@@ -74,6 +74,10 @@ export class KeiserApolloClient {
 
   get currentToken(): string | null { return this.token; }
 
+  /** Drop the cached token so the next call re-logs in (e.g. after the Hub
+   *  credentials changed). */
+  resetToken(): void { this.token = null; }
+
   async login(email: string, password: string): Promise<LoginResult> {
     return this.withLock(async () => {
       const { status, body } = await rawRequest(this.target, 'POST', '/api/auth/login', {

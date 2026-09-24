@@ -3,6 +3,7 @@
 //  - ingest:    drain the local outbox (reps batches) once linked
 //  - live:      push realtime events over a WebSocket (Phase 4)
 import WebSocket from 'ws';
+import { createHash } from 'node:crypto';
 import { config } from '../config.js';
 import { loadState, saveState } from '../state.js';
 import { ack, peek, pending } from '../buffer/db.js';
@@ -19,6 +20,9 @@ export interface HeartbeatReply {
   sync?: { from: string; to: string };
   /** On-demand: run an OTA update check now (instead of waiting for the timer). */
   checkUpdate?: boolean;
+  /** Keiser Hub login pushed from Fyzzy (the practice set it there). Sent only
+   *  when the box doesn't have it yet or it changed (see hubCredFp). */
+  hubCredentials?: { email: string; password: string };
 }
 
 export class CloudLink {
@@ -32,6 +36,11 @@ export class CloudLink {
     // Second liveness signal (net-layer): seconds since the last WireGuard
     // handshake with the hub. null when not enrolled / tunnel down.
     const wgHandshakeAgeSec = await handshakeAgeSec();
+    // Fingerprint of the Hub login we currently have, so the cloud only re-sends
+    // credentials when we're missing them or they changed.
+    const hubCredFp = st.hub?.email && st.hub?.password
+      ? createHash('sha256').update(`${st.hub.email}\n${st.hub.password}`).digest('hex')
+      : null;
     const res = await fetch(this.url('/api/bridge/heartbeat'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -45,6 +54,7 @@ export class CloudLink {
         liveLagMs: st.lastLiveLagMs ?? null,
         liveLagAt: st.lastLiveLagAt ?? null,
         wgHandshakeAgeSec, // server maps this to wg_last_handshake_at
+        hubCredFp,         // server sends hubCredentials only when this differs
       }),
     });
     if (!res.ok) throw new Error(`heartbeat HTTP ${res.status}`);

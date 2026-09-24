@@ -102,6 +102,15 @@ async function heartbeatTick() {
       log.info('update check requested from cloud');
       checkAndUpdate().catch((e) => log.warn('ota', e.message)); // restarts if a newer release exists
     }
+    if (reply.hubCredentials?.email && reply.hubCredentials?.password) {
+      // The practice configured (or changed) the Keiser Hub login in Fyzzy →
+      // adopt it and force a re-login so the collector reads the Hub. No on-site
+      // or SSH provisioning needed.
+      saveState({ hub: { email: reply.hubCredentials.email, password: reply.hubCredentials.password } });
+      hub.resetToken();
+      log.info('applied Keiser Hub login from Fyzzy — will re-login on next collect');
+      collectorTick().catch((e) => log.warn('collector', e.message));
+    }
   } catch (e) {
     // Offline (e.g. still on Keiser WiFi during Phase A) — that's expected.
     log.debug('heartbeat skipped (offline?)');
