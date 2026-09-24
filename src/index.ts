@@ -265,14 +265,19 @@ async function runBackfillAndReconcile() {
     log.warn(`tail export failed: ${e.message}`);
   }
 
-  // 2b. Slow path — whole day, only every reconcileIntervalMs.
+  // 2b. Slow path — a BOUNDED trailing window (not the whole day), only every
+  //     reconcileIntervalMs. A whole-day reconcile grew all day and, sharing the
+  //     Hub connection with the tail, stalled the live feed by the evening. A
+  //     fixed trailing window stays cheap + constant; the daily full pass covers
+  //     the rest. The cloud importer dedupes, so overlap is free.
   const lastRec = st.lastReconcileAt ? new Date(st.lastReconcileAt).getTime() : 0;
   if (now.getTime() - lastRec >= config.export.reconcileIntervalMs) {
+    const reconcileFrom = new Date(Math.max(dayStart.getTime(), now.getTime() - config.export.reconcileWindowMinutes * 60_000));
     try {
-      await exportRange(dayStart, now, st.deviceUid);
+      await exportRange(reconcileFrom, now, st.deviceUid);
       saveState({ lastReconcileAt: now.toISOString() });
     } catch (e: any) {
-      log.warn(`day reconcile failed: ${e.message}`);
+      log.warn(`reconcile failed: ${e.message}`);
     }
   }
 }

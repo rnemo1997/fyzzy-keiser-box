@@ -79,10 +79,15 @@ export const config = {
     // so a tick finishes in ~1-2s and the next one is not skipped by the
     // `collecting` guard. This is what makes the gym feel live.
     tailMinutes: Number(process.env.TAIL_MINUTES || 6),
-    // Slow path: re-export the whole local day this often, to catch anything
-    // the tail missed (late-finished sets, window edges). Expensive — it grows
-    // with the day — so it must NOT run every tick.
+    // Slow path: re-export a trailing window this often, to catch anything the
+    // tail missed (late-finished sets, window edges). Bounded (not the whole day)
+    // so it stays cheap + constant late in a busy day instead of growing and
+    // stalling the live tail (they share one Hub connection).
     reconcileIntervalMs: Number(process.env.RECONCILE_INTERVAL_MS || 180_000),
+    // The reconcile trailing window. Well beyond the tail so it catches real
+    // gaps, but bounded so its cost doesn't grow all day. The daily full pass
+    // (dailyHour) still guarantees total completeness.
+    reconcileWindowMinutes: Number(process.env.RECONCILE_WINDOW_MINUTES || 180),
   },
 
   // Over-the-air updates. The box pulls a single bundled file from GitHub
