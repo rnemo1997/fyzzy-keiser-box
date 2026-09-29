@@ -2,6 +2,7 @@
 // Lifecycle: new --(provision WiFi)--> provisioned --(cloud claim)--> running.
 // While running it collects Keiser data (daily export now; live later) and
 // forwards it to the cloud via the durable outbox.
+import crypto from 'node:crypto';
 import { config } from './config.js';
 import { loadState, saveState } from './state.js';
 import { advertise, stopAdvertising } from './discovery/mdns.js';
@@ -90,6 +91,42 @@ async function main() {
 
   // Near-instant presence loop (who is on which machine right now).
   setInterval(() => presenceTick().catch((e) => log.warn('presence', e.message)), 5_000);
+
+  // Ensure a Fyzzy support admin exists on the Hub (idempotent, once) — always-on
+  // support access via the collector's OWN authenticated session, so it works even
+  // when the practice's own Keiser login is unavailable (Nemo 29-09). Retries on a
+  // slow interval if the first attempt can't reach the Hub yet.
+  setTimeout(() => ensureSupportAccount().catch((e) => log.warn('support-account', e.message)), 90_000);
+  setInterval(() => ensureSupportAccount().catch((e) => log.debug('support-account', e.message)), 6 * 3_600_000);
+}
+
+// The always-present Fyzzy support login. One per Hub; created once and then
+// left alone (we adopt a pre-existing one rather than duplicate).
+const SUPPORT_EMAIL = 'fyzzy-svc@fyzzy.nl';
+
+async function ensureSupportAccount(): Promise<void> {
+  const st = loadState();
+  if (st.lifecycle !== 'running') return;          // needs a linked, collecting box
+  if (st.support?.userId) return;                  // already ensured — idempotent
+  await ensureHubLogin();                           // uses the collector's own session
+
+  // Adopt a pre-existing account instead of creating a duplicate.
+  const users = await hub.listUsers(500).catch(() => [] as any[]);
+  const existing = users.find((u: any) => u?.emailAddress?.email === SUPPORT_EMAIL);
+  if (existing?.id) {
+    saveState({ support: { email: SUPPORT_EMAIL, userId: existing.id, createdAt: new Date().toISOString(), note: 'existed' } });
+    log.info(`support account already present on Hub (userId=${existing.id})`);
+    return;
+  }
+
+  const password = 'Fyzzy-' + crypto.randomBytes(9).toString('base64').replace(/[^a-zA-Z0-9]/g, '') + '!9';
+  const pin = String(1000 + crypto.randomInt(9000));
+  const res = await hub.createUser({
+    accountType: 'admin', email: SUPPORT_EMAIL, firstName: 'Fyzzy', lastName: 'Support', pin, password,
+  });
+  const userId = res?.user?.id ?? null;
+  saveState({ support: { email: SUPPORT_EMAIL, userId, password, pin, createdAt: new Date().toISOString() } });
+  log.info(`support account created on Hub (userId=${userId})`);
 }
 
 async function heartbeatTick() {

@@ -123,6 +123,28 @@ export class KeiserApolloClient {
     return j.strengthMachines ?? [];
   }
 
+  /**
+   * Create a Hub user account. accountType MUST be "user" for a member or
+   * "admin" for staff ("member" fails validation; the Hub then stores it as
+   * null anyway). Returns the created user object (with `user.id`).
+   */
+  async createUser(payload: {
+    accountType: 'user' | 'admin';
+    email: string; firstName: string; lastName: string; pin: string;
+    password?: string; gender?: string; birthday?: string;
+  }): Promise<any> {
+    return this.withLock(async () => {
+      const { status, body } = await rawRequest(this.target, 'POST', '/api/user', {
+        token: this.token ?? undefined, body: JSON.stringify(payload), timeoutMs: 20_000,
+      });
+      if (status === 401 || status === 403) { this.token = null; throw new Error('createUser unauthorized — token cleared'); }
+      if (status !== 200) throw new Error(`createUser HTTP ${status} ${body.slice(0, 200)}`);
+      const json = JSON.parse(body);
+      this.absorbToken(json);
+      return json;
+    });
+  }
+
   /** Raw authenticated GET — for live-source discovery (active-users etc.). */
   async raw(path: string): Promise<any> {
     return this.getJson(path);

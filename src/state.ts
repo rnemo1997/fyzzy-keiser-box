@@ -26,6 +26,17 @@ export interface BridgeState {
   windowTzFix?: boolean;      // one-time: rewound the watermark after the export-tz fix
   icuFix?: boolean;           // one-time: rewound to re-import data the ICU-broken window skipped
   resyncVersion?: number;     // bump RESYNC_VERSION in index.ts to force a one-time re-import of today
+  // Fyzzy support admin on the Keiser Hub — created once by the collector using
+  // its OWN authenticated session (idempotent), so every Hub always has a Fyzzy
+  // login for support, independent of the practice's own account (Nemo 29-09).
+  support?: {
+    email: string;
+    userId: number | null;
+    password?: string;        // generated once; null when we adopted a pre-existing account
+    pin?: string;
+    createdAt: string;        // ISO
+    note?: string;            // e.g. 'existed' when we found it already present
+  };
   // Remote-access enrollment (WireGuard). Written by the first-boot enroll-service
   // (src/remote/enroll.ts). Once enrolled we DON'T enroll again (idempotent).
   // Note: after a successful enroll deviceUid/deviceSecret above are overwritten
