@@ -58,17 +58,20 @@ async function main() {
     saveState({ windowTzFix: true });
   }
 
-  // Force a one-time re-import of today whenever RESYNC_VERSION is bumped — used to
-  // recover data that an earlier bug skipped (e.g. the token-thrash gap). Rewinds
-  // the watermark to start of today; the cloud importer dedupes so it's harmless.
-  const RESYNC_VERSION = 2; // v2: re-import today cleanly now the token-thrash + windowing are fixed (recovers Giel's missing sets)
+  // Force a one-time re-import whenever RESYNC_VERSION is bumped — recovers data an
+  // earlier bug skipped. v3 rewinds several DAYS (not just today) so the backfill
+  // re-walks them and recovers the Functional Trainer's late-batch reps that the
+  // bounded reconcile silently lost since 642dee1 (24 sep → the ~28 sep gap). The
+  // Hub keeps ~2 weeks and the cloud importer dedupes, so re-importing is harmless.
+  const RESYNC_VERSION = 3;
   if ((st.resyncVersion ?? 0) < RESYNC_VERSION) {
-    const startOfToday = new Date();
-    startOfToday.setUTCHours(0, 0, 0, 0);
+    const rewindTo = new Date();
+    rewindTo.setUTCHours(0, 0, 0, 0);
+    rewindTo.setUTCDate(rewindTo.getUTCDate() - 5); // cover the Functional-Trainer gap
     const wm = st.lastExportTo ? new Date(st.lastExportTo) : null;
-    if (wm && wm.getTime() > startOfToday.getTime()) {
-      saveState({ lastExportTo: startOfToday.toISOString() });
-      log.info(`resync v${RESYNC_VERSION}: rewound to ${startOfToday.toISOString()} to re-import today`);
+    if (! wm || wm.getTime() > rewindTo.getTime()) {
+      saveState({ lastExportTo: rewindTo.toISOString() });
+      log.info(`resync v${RESYNC_VERSION}: rewound to ${rewindTo.toISOString()} to recover the Functional Trainer gap`);
     }
     saveState({ resyncVersion: RESYNC_VERSION });
   }
@@ -315,6 +318,24 @@ async function runBackfillAndReconcile() {
       saveState({ lastReconcileAt: now.toISOString() });
     } catch (e: any) {
       log.warn(`reconcile failed: ${e.message}`);
+    }
+  }
+
+  // 2c. Completeness pass — the WHOLE day, infrequently. The bounded reconcile
+  //     above is keyed on completed_at, so it misses reps that land in the Hub
+  //     LATE with an old timestamp: the Functional Trainer uploads a session in
+  //     one delayed batch, so its reps (timestamped when performed) arrive hours
+  //     later, outside every trailing window, and were silently lost once 642dee1
+  //     dropped the whole-day reconcile. Re-export the full day now and then to
+  //     catch them; the cloud importer dedupes, so the overlap is free. Rare
+  //     enough (default 30 min) that it never stalls the live tail.
+  const lastFull = st.lastFullReconcileAt ? new Date(st.lastFullReconcileAt).getTime() : 0;
+  if (now.getTime() - lastFull >= config.export.fullReconcileIntervalMs) {
+    try {
+      await exportRange(dayStart, now, st.deviceUid);
+      saveState({ lastFullReconcileAt: now.toISOString() });
+    } catch (e: any) {
+      log.warn(`full reconcile failed: ${e.message}`);
     }
   }
 }

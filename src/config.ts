@@ -88,6 +88,14 @@ export const config = {
     // gaps, but bounded so its cost doesn't grow all day. The daily full pass
     // (dailyHour) still guarantees total completeness.
     reconcileWindowMinutes: Number(process.env.RECONCILE_WINDOW_MINUTES || 180),
+    // Completeness pass: re-export the WHOLE day this often. The bounded reconcile
+    // above is keyed on completed_at, so it MISSES data that lands in the Hub late
+    // with an old timestamp — the Functional Trainer uploads a whole session in
+    // one delayed batch, so its reps (timestamped when performed) arrive hours
+    // later, outside every trailing window, and were silently lost since 642dee1
+    // bounded the reconcile. Infrequent so it doesn't stall the live tail; the
+    // cloud importer dedupes, so the overlap is free.
+    fullReconcileIntervalMs: Number(process.env.FULL_RECONCILE_INTERVAL_MS || 1_800_000),
   },
 
   // Over-the-air updates. The box pulls a single bundled file from GitHub

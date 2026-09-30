@@ -19,7 +19,8 @@ export interface BridgeState {
   hub?: { email: string; password: string }; // TODO: encrypt at rest / move to machine-secret
   cloud?: { practiceId: number };      // set once the cloud reports we've been claimed
   lastExportTo?: string;      // ISO (UTC) watermark of the newest exported window
-  lastReconcileAt?: string;   // ISO (UTC) last whole-day re-export (the slow completeness pass)
+  lastReconcileAt?: string;   // ISO (UTC) last bounded trailing-window reconcile
+  lastFullReconcileAt?: string; // ISO (UTC) last WHOLE-day re-export (catches late batch uploads e.g. Functional Trainer)
   lastRepTs?: number;         // "Completed At" (ms) of the newest rep we've ever seen — advances only on a genuinely new rep
   lastLiveLagMs?: number;     // delivery lag (now − rep "Completed At") measured the last time a NEW rep arrived
   lastLiveLagAt?: string;     // ISO (UTC) when lastLiveLagMs was measured
