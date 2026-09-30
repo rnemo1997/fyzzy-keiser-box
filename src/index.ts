@@ -132,6 +132,42 @@ async function ensureSupportAccount(): Promise<void> {
   log.info(`support account created on Hub (userId=${userId})`);
 }
 
+/**
+ * Run a cloud-queued command against the Keiser Hub — ALWAYS via the Fyzzy
+ * support account (state.support), never the practice/collector login, so we
+ * never invalidate their token or lock anyone out (the Hub drops a token when
+ * the same account logs in elsewhere). Reports the outcome back per command.
+ */
+async function runBridgeCommand(cmd: { id: number; type: string; payload: any }): Promise<void> {
+  if (cmd.type !== 'create_keiser_user') {
+    await cloud.postCommandResult(cmd.id, false, undefined, `unknown command type: ${cmd.type}`).catch(() => {});
+    return;
+  }
+  const support = loadState().support;
+  if (!support?.email || !support?.password) {
+    await cloud.postCommandResult(cmd.id, false, undefined, 'no Fyzzy support account on this Hub yet').catch(() => {});
+    return;
+  }
+  try {
+    const svc = new KeiserApolloClient(config.hub); // separate session as fyzzy-svc
+    await svc.login(support.email, support.password);
+    const p = cmd.payload || {};
+    const res = await svc.createUser({
+      accountType: 'user', // 'user' = member (the Hub rejects 'member')
+      email: String(p.email),
+      firstName: String(p.firstName || ''),
+      lastName: String(p.lastName || ''),
+      pin: String(p.pin),
+    });
+    const hubUserId = res?.user?.id ?? null;
+    await cloud.postCommandResult(cmd.id, true, { hubUserId }).catch(() => {});
+    log.info(`command ${cmd.id}: created Hub user ${hubUserId} for client ${p.clientId}`);
+  } catch (e: any) {
+    await cloud.postCommandResult(cmd.id, false, undefined, (e?.message ?? 'error').slice(0, 480)).catch(() => {});
+    log.warn(`command ${cmd.id} failed`, e?.message);
+  }
+}
+
 async function heartbeatTick() {
   const st = loadState();
   const hubReachable = await hub.keepAlive().then(() => true).catch(() => false);
@@ -165,6 +201,11 @@ async function heartbeatTick() {
       hub.resetToken();
       log.info('applied Keiser Hub login from Fyzzy — will re-login on next collect');
       collectorTick().catch((e) => log.warn('collector', e.message));
+    }
+    if (reply.commands?.length) {
+      for (const cmd of reply.commands) {
+        await runBridgeCommand(cmd).catch((e) => log.warn(`command ${cmd.id}`, e?.message));
+      }
     }
   } catch (e) {
     // Offline (e.g. still on Keiser WiFi during Phase A) — that's expected.

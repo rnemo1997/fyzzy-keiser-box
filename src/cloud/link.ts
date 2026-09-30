@@ -23,6 +23,15 @@ export interface HeartbeatReply {
   /** Keiser Hub login pushed from Fyzzy (the practice set it there). Sent only
    *  when the box doesn't have it yet or it changed (see hubCredFp). */
   hubCredentials?: { email: string; password: string };
+  /** Cloud → Bridge commands to run against the Hub (e.g. create a Hub account
+   *  for a client). Run via the Fyzzy support account; report back per command. */
+  commands?: BridgeCmd[];
+}
+
+export interface BridgeCmd {
+  id: number;
+  type: string;
+  payload: Record<string, any>;
 }
 
 export class CloudLink {
@@ -107,6 +116,22 @@ export class CloudLink {
       body: JSON.stringify({ present }),
     });
     if (!res.ok) throw new Error(`presence HTTP ${res.status}`);
+  }
+
+  /** Report the outcome of a queued command back to the cloud. */
+  async postCommandResult(commandId: number, ok: boolean, result?: Record<string, any>, error?: string): Promise<void> {
+    const st = loadState();
+    if (!st.cloud) return;
+    const res = await fetch(this.url('/api/bridge/command-result'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Uid': st.deviceUid,
+        'X-Device-Secret': st.deviceSecret,
+      },
+      body: JSON.stringify({ deviceUid: st.deviceUid, deviceSecret: st.deviceSecret, commandId, ok, result, error }),
+    });
+    if (!res.ok) throw new Error(`command-result HTTP ${res.status}`);
   }
 
   /** Realtime uplink for live machine events (Phase 4). */
