@@ -147,7 +147,7 @@ async function ensureSupportAccount(): Promise<void> {
  * the same account logs in elsewhere). Reports the outcome back per command.
  */
 async function runBridgeCommand(cmd: { id: number; type: string; payload: any }): Promise<void> {
-  const KNOWN = ['create_keiser_user', 'set_keiser_user_pin'];
+  const KNOWN = ['create_keiser_user', 'set_keiser_user_pin', 'get_keiser_user_pin'];
   if (! KNOWN.includes(cmd.type)) {
     await cloud.postCommandResult(cmd.id, false, undefined, `unknown command type: ${cmd.type}`).catch(() => {});
     return;
@@ -168,6 +168,14 @@ async function runBridgeCommand(cmd: { id: number; type: string; payload: any })
       await svc.setUserPin(String(p.userId), String(p.pin));
       await cloud.postCommandResult(cmd.id, true, { userId: p.userId }).catch(() => {});
       log.info(`command ${cmd.id}: updated PIN for Hub user ${p.userId} (client ${p.clientId ?? '?'})`);
+      return;
+    }
+
+    if (cmd.type === 'get_keiser_user_pin') {
+      if (! p.userId) throw new Error('get_keiser_user_pin: missing userId');
+      const pin = await svc.getUserPin(String(p.userId));
+      await cloud.postCommandResult(cmd.id, true, { userId: p.userId, pin }).catch(() => {});
+      log.info(`command ${cmd.id}: read PIN for Hub user ${p.userId} (client ${p.clientId ?? '?'})`);
       return;
     }
 

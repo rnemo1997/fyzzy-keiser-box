@@ -164,6 +164,22 @@ export class KeiserApolloClient {
     });
   }
 
+  /** Read a Hub user's current login PIN (GET /api/user/pin?userId=). Used to
+   *  backfill the PIN of users linked before Fyzzy stored it. */
+  async getUserPin(userId: string | number): Promise<string | null> {
+    return this.withLock(async () => {
+      const { status, body } = await rawRequest(this.target, 'GET', `/api/user/pin?userId=${encodeURIComponent(String(userId))}`, {
+        token: this.token ?? undefined, timeoutMs: 20_000,
+      });
+      if (status === 401 || status === 403) { this.token = null; throw new Error('getUserPin unauthorized — token cleared'); }
+      if (status !== 200) throw new Error(`getUserPin HTTP ${status} ${body.slice(0, 200)}`);
+      const json = JSON.parse(body);
+      this.absorbToken(json);
+      const pin = json.pin ?? json.userPin?.pin ?? json.data?.pin ?? json.user?.pin ?? null;
+      return pin != null ? String(pin) : null;
+    });
+  }
+
   /** Raw authenticated GET — for live-source discovery (active-users etc.). */
   async raw(path: string): Promise<any> {
     return this.getJson(path);
