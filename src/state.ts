@@ -27,6 +27,7 @@ export interface BridgeState {
   windowTzFix?: boolean;      // one-time: rewound the watermark after the export-tz fix
   icuFix?: boolean;           // one-time: rewound to re-import data the ICU-broken window skipped
   resyncVersion?: number;     // bump RESYNC_VERSION in index.ts to force a one-time re-import of today
+  tzOffsetMinutes?: number;   // practice UTC offset (min) from the cloud heartbeat; drives the export window instead of the Pi OS tz
   // Fyzzy support admin on the Keiser Hub — created once by the collector using
   // its OWN authenticated session (idempotent), so every Hub always has a Fyzzy
   // login for support, independent of the practice's own account (Nemo 29-09).

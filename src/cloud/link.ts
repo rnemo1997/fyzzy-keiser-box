@@ -16,6 +16,11 @@ const log = logger('cloud');
 export interface HeartbeatReply {
   claimed: boolean;
   practiceId?: number;
+  /** The practice's current UTC offset in minutes (e.g. 120 for CEST, 660 for
+   *  AEDT). The box uses this for the Hub export window so it never depends on
+   *  the Pi's OS timezone. Absent → fall back to the system tz. */
+  tzOffsetMinutes?: number;
+  timezone?: string;
   /** On-demand sync command from the cloud: re-export this window now. */
   sync?: { from: string; to: string };
   /** On-demand: run an OTA update check now (instead of waiting for the timer). */

@@ -68,7 +68,10 @@ async function main() {
   // outside the queried window and never exported. Now the window follows the
   // box's SYSTEM timezone. Rewind a few days so the mis-windowed sessions
   // re-export under the corrected zone (the cloud importer dedupes).
-  const RESYNC_VERSION = 4;
+  // v5: the export window now follows the cloud-provided practice tz offset
+  // instead of the Pi's OS timezone. Rewind so anything mis-windowed by a wrong
+  // Pi tz re-exports under the corrected offset (the cloud importer dedupes).
+  const RESYNC_VERSION = 5;
   if ((st.resyncVersion ?? 0) < RESYNC_VERSION) {
     const rewindTo = new Date();
     rewindTo.setUTCHours(0, 0, 0, 0);
@@ -199,6 +202,13 @@ async function heartbeatTick() {
       recoveryPortal = null;
     }
     if (reply.claimed && loadState().lifecycle === 'running') advertise(); // reflect state in mDNS
+    if (typeof reply.tzOffsetMinutes === 'number' && reply.tzOffsetMinutes !== loadState().tzOffsetMinutes) {
+      // Practice timezone from the cloud → drives the export window, independent
+      // of the Pi's OS timezone (which may be mis-imaged).
+      saveState({ tzOffsetMinutes: reply.tzOffsetMinutes });
+      log.info(`practice tz offset from cloud: ${reply.tzOffsetMinutes}min (${reply.timezone ?? '?'})`);
+      collectorTick().catch((e) => log.warn('collector', e.message)); // re-export with the corrected window
+    }
     if (reply.sync) {
       // Web asked for a catch-up sync: rewind the export watermark so the next
       // collector run re-exports [from .. now], then kick it off immediately.
@@ -450,30 +460,35 @@ function measureLiveLag(reps: Array<Record<string, string>>): void {
 }
 
 /**
- * The UTC instant of local 00:00 for the day containing d, in the box's SYSTEM
- * timezone (set at install to the practice's zone — e.g. Australia/Sydney).
- * Date's local getters/setters honour the OS zone through libc even on this
- * small-ICU Node build, unlike Intl/toLocaleString with {timeZone}.
+ * The practice's UTC offset in ms, used to compute the Hub export window in the
+ * practice's local wall-clock. Sourced from the cloud heartbeat
+ * (state.tzOffsetMinutes) — full tz data lives server-side — so the window
+ * never depends on the Pi's OS timezone (small-ICU Node can't resolve IANA
+ * zones via Intl anyway). Falls back to the system tz until the cloud value
+ * arrives. Never hardcode a zone: a wrong one shifts the window and the Hub
+ * returns zero reps.
  */
+function localOffsetMs(): number {
+  const off = loadState().tzOffsetMinutes;
+  if (typeof off === 'number') return off * 60_000;
+  return -new Date().getTimezoneOffset() * 60_000; // system tz fallback (offset east of UTC)
+}
+
+/** The UTC instant of local 00:00 for the day containing d, in the practice tz. */
 function startOfLocalDay(d: Date): Date {
-  const local = new Date(d);
-  local.setHours(0, 0, 0, 0); // local (system TZ) midnight
-  return local;
+  const off = localOffsetMs();
+  const local = new Date(d.getTime() + off); // into local wall-clock
+  local.setUTCHours(0, 0, 0, 0);             // zero the time-of-day in local terms
+  return new Date(local.getTime() - off);    // back to the real UTC instant
 }
 
 /**
  * Format an instant as the Hub's local wall-clock — the Hub filters export by
- * local time, ignoring the offset. We derive the offset from the box's SYSTEM
- * timezone via Date#getTimezoneOffset (DST-aware, honoured through libc) rather
- * than Intl/toLocaleString with {timeZone}, which silently returns UTC on this
- * small-ICU Node build. The box is on-site, so its zone matches the Hub's; the
- * installer sets it to the practice's timezone. Never hardcode a zone — a wrong
- * one shifts the window and the Hub returns zero reps (the Amsterdam-hardcoded
- * predecessor missed an Australian practice's sessions entirely).
+ * local time, reading the digits as its own local time and ignoring the offset.
  */
 function toHubLocal(d: Date): string {
-  const shifted = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
-  return shifted.toISOString().replace(/\.\d{3}Z$/, '.000Z'); // digits are system-local wall-clock
+  const shifted = new Date(d.getTime() + localOffsetMs());
+  return shifted.toISOString().replace(/\.\d{3}Z$/, '.000Z'); // digits are practice-local wall-clock
 }
 
 function addDays(d: Date, n: number): Date { return new Date(d.getTime() + n * 86_400_000); }
