@@ -63,11 +63,16 @@ async function main() {
   // re-walks them and recovers the Functional Trainer's late-batch reps that the
   // bounded reconcile silently lost since 642dee1 (24 sep → the ~28 sep gap). The
   // Hub keeps ~2 weeks and the cloud importer dedupes, so re-importing is harmless.
-  const RESYNC_VERSION = 3;
+  // v4: the export window was computed in hardcoded Europe/Amsterdam wall-clock,
+  // so a non-EU practice (A1 Function, Australia/Sydney) had its sessions fall
+  // outside the queried window and never exported. Now the window follows the
+  // box's SYSTEM timezone. Rewind a few days so the mis-windowed sessions
+  // re-export under the corrected zone (the cloud importer dedupes).
+  const RESYNC_VERSION = 4;
   if ((st.resyncVersion ?? 0) < RESYNC_VERSION) {
     const rewindTo = new Date();
     rewindTo.setUTCHours(0, 0, 0, 0);
-    rewindTo.setUTCDate(rewindTo.getUTCDate() - 5); // cover the Functional-Trainer gap
+    rewindTo.setUTCDate(rewindTo.getUTCDate() - 5); // cover recently mis-windowed sessions
     const wm = st.lastExportTo ? new Date(st.lastExportTo) : null;
     if (! wm || wm.getTime() > rewindTo.getTime()) {
       saveState({ lastExportTo: rewindTo.toISOString() });
@@ -432,40 +437,33 @@ function measureLiveLag(reps: Array<Record<string, string>>): void {
   log.info(`live-lag: new rep delivered in ${(lagMs / 1000).toFixed(1)}s`);
 }
 
-/** The UTC instant of local (Europe/Amsterdam) 00:00 for the day containing d. */
+/**
+ * The UTC instant of local 00:00 for the day containing d, in the box's SYSTEM
+ * timezone (set at install to the practice's zone — e.g. Australia/Sydney).
+ * Date's local getters/setters honour the OS zone through libc even on this
+ * small-ICU Node build, unlike Intl/toLocaleString with {timeZone}.
+ */
 function startOfLocalDay(d: Date): Date {
-  const off = amsterdamOffsetMs(d);
-  const local = new Date(d.getTime() + off);
-  local.setUTCHours(0, 0, 0, 0);
-  return new Date(local.getTime() - off);
+  const local = new Date(d);
+  local.setHours(0, 0, 0, 0); // local (system TZ) midnight
+  return local;
 }
 
 /**
  * Format an instant as the Hub's local wall-clock — the Hub filters export by
- * local time, ignoring the offset. We compute the Europe/Amsterdam offset by
- * hand (DST-aware) instead of via Intl/toLocaleString, because the box's Node
- * build ships small-ICU: `toLocaleString(..., {timeZone})` silently returns UTC
- * there, which put the export window ~2h off and returned zero reps.
+ * local time, ignoring the offset. We derive the offset from the box's SYSTEM
+ * timezone via Date#getTimezoneOffset (DST-aware, honoured through libc) rather
+ * than Intl/toLocaleString with {timeZone}, which silently returns UTC on this
+ * small-ICU Node build. The box is on-site, so its zone matches the Hub's; the
+ * installer sets it to the practice's timezone. Never hardcode a zone — a wrong
+ * one shifts the window and the Hub returns zero reps (the Amsterdam-hardcoded
+ * predecessor missed an Australian practice's sessions entirely).
  */
 function toHubLocal(d: Date): string {
-  const shifted = new Date(d.getTime() + amsterdamOffsetMs(d));
-  return shifted.toISOString().replace(/\.\d{3}Z$/, '.000Z'); // digits are Amsterdam wall-clock
+  const shifted = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+  return shifted.toISOString().replace(/\.\d{3}Z$/, '.000Z'); // digits are system-local wall-clock
 }
 
-/** Day-of-month of the last Sunday in a month (UTC). */
-function lastSundayDom(year: number, monthZeroIdx: number): number {
-  const lastDay = new Date(Date.UTC(year, monthZeroIdx + 1, 0));
-  return lastDay.getUTCDate() - lastDay.getUTCDay();
-}
-
-/** Europe/Amsterdam UTC offset in ms: CEST(+2h) last-Sun-Mar 01:00 UTC → last-Sun-Oct 01:00 UTC, else CET(+1h). */
-function amsterdamOffsetMs(d: Date): number {
-  const y = d.getUTCFullYear();
-  const dstStart = Date.UTC(y, 2, lastSundayDom(y, 2), 1);
-  const dstEnd = Date.UTC(y, 9, lastSundayDom(y, 9), 1);
-  const t = d.getTime();
-  return (t >= dstStart && t < dstEnd ? 120 : 60) * 60_000;
-}
 function addDays(d: Date, n: number): Date { return new Date(d.getTime() + n * 86_400_000); }
 
 process.on('SIGINT', () => { stopAdvertising(); process.exit(0); });
