@@ -145,6 +145,25 @@ export class KeiserApolloClient {
     });
   }
 
+  /**
+   * Update a Hub user's login PIN (the credential used at the machine and for
+   * POST /auth/pin/login). The Hub exposes PUT /api/user/pin with pin + userId
+   * as query params (per its swagger).
+   */
+  async setUserPin(userId: string | number, pin: string): Promise<any> {
+    return this.withLock(async () => {
+      const q = `pin=${encodeURIComponent(pin)}&userId=${encodeURIComponent(String(userId))}`;
+      const { status, body } = await rawRequest(this.target, 'PUT', `/api/user/pin?${q}`, {
+        token: this.token ?? undefined, timeoutMs: 20_000,
+      });
+      if (status === 401 || status === 403) { this.token = null; throw new Error('setUserPin unauthorized — token cleared'); }
+      if (status !== 200) throw new Error(`setUserPin HTTP ${status} ${body.slice(0, 200)}`);
+      const json = JSON.parse(body);
+      this.absorbToken(json);
+      return json;
+    });
+  }
+
   /** Raw authenticated GET — for live-source discovery (active-users etc.). */
   async raw(path: string): Promise<any> {
     return this.getJson(path);

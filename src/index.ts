@@ -144,7 +144,8 @@ async function ensureSupportAccount(): Promise<void> {
  * the same account logs in elsewhere). Reports the outcome back per command.
  */
 async function runBridgeCommand(cmd: { id: number; type: string; payload: any }): Promise<void> {
-  if (cmd.type !== 'create_keiser_user') {
+  const KNOWN = ['create_keiser_user', 'set_keiser_user_pin'];
+  if (! KNOWN.includes(cmd.type)) {
     await cloud.postCommandResult(cmd.id, false, undefined, `unknown command type: ${cmd.type}`).catch(() => {});
     return;
   }
@@ -157,6 +158,17 @@ async function runBridgeCommand(cmd: { id: number; type: string; payload: any })
     const svc = new KeiserApolloClient(config.hub); // separate session as fyzzy-svc
     await svc.login(support.email, support.password);
     const p = cmd.payload || {};
+
+    if (cmd.type === 'set_keiser_user_pin') {
+      if (! p.userId) throw new Error('set_keiser_user_pin: missing userId');
+      if (! p.pin) throw new Error('set_keiser_user_pin: missing pin');
+      await svc.setUserPin(String(p.userId), String(p.pin));
+      await cloud.postCommandResult(cmd.id, true, { userId: p.userId }).catch(() => {});
+      log.info(`command ${cmd.id}: updated PIN for Hub user ${p.userId} (client ${p.clientId ?? '?'})`);
+      return;
+    }
+
+    // create_keiser_user
     const res = await svc.createUser({
       accountType: 'user', // 'user' = member (the Hub rejects 'member')
       email: String(p.email),
