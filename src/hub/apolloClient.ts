@@ -175,8 +175,21 @@ export class KeiserApolloClient {
       if (status !== 200) throw new Error(`getUserPin HTTP ${status} ${body.slice(0, 200)}`);
       const json = JSON.parse(body);
       this.absorbToken(json);
-      const pin = json.pin ?? json.userPin?.pin ?? json.data?.pin ?? json.user?.pin ?? null;
-      return pin != null ? String(pin) : null;
+      // The Hub nests the PIN inconsistently. NEVER String() a raw object — that
+      // turned every backfilled PIN into the literal "[object Object]". Walk the
+      // likely shapes and only accept a numeric PIN.
+      const pick = (v: any, depth = 0): string | null => {
+        if (v == null || depth > 5) return null;
+        if (typeof v === 'number') return String(v);
+        if (typeof v === 'string') return v.trim();
+        if (typeof v === 'object') {
+          return pick(v.pin ?? v.value ?? v.code ?? v.userPin ?? v.data ?? v.user, depth + 1);
+        }
+        return null;
+      };
+      const pin = pick(json);
+      if (pin && /^\d{3,10}$/.test(pin)) return pin;
+      throw new Error(`getUserPin: no numeric pin in response: ${body.slice(0, 300)}`);
     });
   }
 
