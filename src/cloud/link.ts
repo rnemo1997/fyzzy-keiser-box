@@ -9,6 +9,7 @@ import { loadState, saveState } from '../state.js';
 import { ack, peek, pending } from '../buffer/db.js';
 import { currentVersion } from '../update/updater.js';
 import { handshakeAgeSec } from '../remote/wg.js';
+import { readHealth } from '../remote/health.js';
 import { logger } from '../util/log.js';
 
 const log = logger('cloud');
@@ -50,6 +51,9 @@ export class CloudLink {
     // Second liveness signal (net-layer): seconds since the last WireGuard
     // handshake with the hub. null when not enrolled / tunnel down.
     const wgHandshakeAgeSec = await handshakeAgeSec();
+    // Host health (undervoltage/brownout + CPU temp) so a power problem shows up
+    // in the fleet view without SSH.
+    const health = await readHealth();
     // Fingerprint of the Hub login we currently have, so the cloud only re-sends
     // credentials when we're missing them or they changed.
     const hubCredFp = st.hub?.email && st.hub?.password
@@ -69,6 +73,8 @@ export class CloudLink {
         liveLagAt: st.lastLiveLagAt ?? null,
         wgHandshakeAgeSec, // server maps this to wg_last_handshake_at
         hubCredFp,         // server sends hubCredentials only when this differs
+        undervoltage: health.undervoltage, // Pi brownout flag (null = unknown)
+        tempC: health.tempC,               // CPU temperature °C
       }),
     });
     if (!res.ok) throw new Error(`heartbeat HTTP ${res.status}`);
