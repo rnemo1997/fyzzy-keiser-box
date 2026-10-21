@@ -180,16 +180,37 @@ async function runBridgeCommand(cmd: { id: number; type: string; payload: any })
     }
 
     // create_keiser_user
-    const res = await svc.createUser({
-      accountType: 'user', // 'user' = member (the Hub rejects 'member')
-      email: String(p.email),
-      firstName: String(p.firstName || ''),
-      lastName: String(p.lastName || ''),
-      pin: String(p.pin),
-    });
-    const hubUserId = res?.user?.id ?? null;
+    let hubUserId: any = null;
+    try {
+      const res = await svc.createUser({
+        accountType: 'user', // 'user' = member (the Hub rejects 'member')
+        email: String(p.email),
+        firstName: String(p.firstName || ''),
+        lastName: String(p.lastName || ''),
+        pin: String(p.pin),
+      });
+      hubUserId = res?.user?.id ?? null;
+    } catch (e: any) {
+      // The Hub already has a user with this email (DuplicateEntity, code 606):
+      // the account exists, so LINK it instead of failing. Therapists hit this
+      // when a create was retried (the first attempt had actually landed), or the
+      // member was added on the Hub directly. Look the user up by email and
+      // best-effort set the PIN we intended, then report its id so the cloud
+      // links the existing profile. (Sentry/TestFlight: "createUser HTTP 500
+      // DuplicateEntity … probeer opnieuw".)
+      const msg = String(e?.message ?? '');
+      if (! /DuplicateEntity|already exists/i.test(msg)) throw e;
+      const email = String(p.email).trim().toLowerCase();
+      const existing = (await svc.listUsers()).find(
+        (u: any) => String(u?.email ?? '').trim().toLowerCase() === email,
+      );
+      if (! existing?.id) throw e; // genuinely can't find it → report the original error
+      try { await svc.setUserPin(String(existing.id), String(p.pin)); } catch {}
+      hubUserId = existing.id;
+      log.info(`command ${cmd.id}: Hub user already existed for ${email} → linking ${existing.id}`);
+    }
     await cloud.postCommandResult(cmd.id, true, { hubUserId }).catch(() => {});
-    log.info(`command ${cmd.id}: created Hub user ${hubUserId} for client ${p.clientId}`);
+    log.info(`command ${cmd.id}: created/linked Hub user ${hubUserId} for client ${p.clientId}`);
   } catch (e: any) {
     await cloud.postCommandResult(cmd.id, false, undefined, (e?.message ?? 'error').slice(0, 480)).catch(() => {});
     log.warn(`command ${cmd.id} failed`, e?.message);
