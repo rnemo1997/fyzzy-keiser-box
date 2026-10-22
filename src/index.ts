@@ -249,6 +249,9 @@ async function heartbeatTick() {
       log.info(`sync command received — re-export from ${reply.sync.from}`);
       saveState({ lastExportTo: reply.sync.from });
       collectorTick().catch((e) => log.warn('collector', e.message));
+      // Same tap also refreshes the machine inventory, so "Sync nu" fills the
+      // machine list on demand instead of waiting for the hourly tick (Nemo 22-10).
+      machinesTick().catch((e) => log.debug('machines', e.message));
     }
     if (reply.checkUpdate) {
       log.info('update check requested from cloud');
