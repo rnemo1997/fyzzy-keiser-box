@@ -103,6 +103,11 @@ async function main() {
   // Near-instant presence loop (who is on which machine right now).
   setInterval(() => presenceTick().catch((e) => log.warn('presence', e.message)), 5_000);
 
+  // Sync the Hub's machine inventory to Fyzzy so the practice never has to add
+  // machines by hand (Nemo 22-10). Changes rarely → hourly, plus once on boot.
+  setInterval(() => machinesTick().catch((e) => log.debug('machines', e.message)), 3_600_000);
+  setTimeout(() => machinesTick().catch(() => {}), 20_000);
+
   // Ensure a Fyzzy support admin exists on the Hub (idempotent, once) — always-on
   // support access via the collector's OWN authenticated session, so it works even
   // when the practice's own Keiser login is unavailable (Nemo 29-09). Retries on a
@@ -348,6 +353,27 @@ async function presenceTick() {
     log.debug(`presence skipped: ${e.message}`);
   } finally {
     presenceBusy = false;
+  }
+}
+
+/**
+ * Read the Hub's full machine inventory and hand it to Fyzzy, which creates a
+ * KeiserMachine per model it doesn't have yet — so the practice never has to add
+ * machines by hand (Nemo 22-10). The Hub list carries modelNumber + name, which
+ * is exactly what the manual "add machine" flow needs.
+ */
+async function machinesTick() {
+  const st = loadState();
+  if (st.lifecycle !== 'running') return;
+  try {
+    await ensureHubLogin();
+    const list = await hub.raw('/api/strength-machine/list?limit=200');
+    const machines = (list.strengthMachines ?? [])
+      .map((m: any) => ({ modelNumber: m.modelNumber ?? null, name: m.name ?? null }))
+      .filter((m: any) => m.modelNumber != null);
+    if (machines.length) await cloud.postMachines(machines);
+  } catch (e: any) {
+    log.debug(`machines sync skipped: ${e.message}`);
   }
 }
 

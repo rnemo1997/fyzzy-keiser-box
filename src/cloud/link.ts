@@ -129,6 +129,22 @@ export class CloudLink {
     if (!res.ok) throw new Error(`presence HTTP ${res.status}`);
   }
 
+  /** Sync the Hub's machine inventory so Fyzzy can auto-create machines. */
+  async postMachines(machines: unknown[]): Promise<void> {
+    const st = loadState();
+    if (!st.cloud) return; // not linked yet
+    const res = await fetch(this.url('/api/bridge/machines'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Uid': st.deviceUid,
+        'X-Device-Secret': st.deviceSecret,
+      },
+      body: JSON.stringify({ machines }),
+    });
+    if (!res.ok) throw new Error(`machines HTTP ${res.status}`);
+  }
+
   /** Report the outcome of a queued command back to the cloud. */
   async postCommandResult(commandId: number, ok: boolean, result?: Record<string, any>, error?: string): Promise<void> {
     const st = loadState();
