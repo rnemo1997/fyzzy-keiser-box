@@ -126,6 +126,23 @@ ENV
   chmod 600 /etc/fyzzy-bridge.env
 fi
 
+echo "== persistent journald =="
+# The Pi's journal is volatile by default, so a power-cycle wipes every log —
+# which is exactly what left us blind after two bridges hung and were rebooted
+# (Nemo 26-10). Make it persistent so kernel events (under-voltage, OOM, thermal
+# throttle) and the agent's own logs survive a reboot. Capped so the SD card
+# can't fill up. (Agent-level logs also go to a file in the data dir.)
+mkdir -p /var/log/journal
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/fyzzy.conf <<'JRN'
+[Journal]
+Storage=persistent
+SystemMaxUse=100M
+SystemMaxFileSize=20M
+MaxRetentionSec=1month
+JRN
+systemctl restart systemd-journald 2>/dev/null || true
+
 echo "== systemd =="
 cp "$SRC/systemd/fyzzy-bridge.service"   /etc/systemd/system/fyzzy-bridge.service
 cp "$SRC/systemd/fyzzy-enroll.service"   /etc/systemd/system/fyzzy-enroll.service
